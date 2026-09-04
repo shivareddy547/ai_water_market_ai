@@ -1,10 +1,33 @@
 'use strict';
 const userService = require('../services/userService');
 class UserController {
+    async getUsers(req, res, next) {
+        try {
+            const role = req.query.role || 'user';
+            const users = await userService.getUsersByRole(role);
+            res.json({ success: true, data: users });
+        } catch (err) {
+            next(err);
+        }
+    }
     async getSuppliers(req, res, next) {
         try {
             const users = await userService.getSuppliers();
             res.json({ success: true, data: users });
+        } catch (err) {
+            next(err);
+        }
+    }
+    async updateUserActive(req, res, next) {
+        try {
+            const { isActive } = req.body;
+            if (typeof isActive !== 'boolean') {
+                const err = new Error('Invalid active status');
+                err.status = 400;
+                throw err;
+            }
+            const user = await userService.updateUserActive(req.params.id, isActive);
+            res.json({ success: true, data: user, message: 'User status updated successfully' });
         } catch (err) {
             next(err);
         }

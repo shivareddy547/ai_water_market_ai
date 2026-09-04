@@ -1,11 +1,28 @@
 'use strict';
 const { User } = require('../models');
 class UserService {
+    async getUsersByRole(role) {
+        return await User.findAll({
+            where: { role: role },
+            order: [['created_at', 'DESC']]
+        });
+    }
     async getSuppliers() {
         return await User.findAll({
             where: { role: 'supplier' },
             order: [['created_at', 'DESC']]
         });
+    }
+    async updateUserActive(id, isActive) {
+        const user = await User.findByPk(id);
+        if (!user) {
+            const err = new Error('User not found');
+            err.status = 404;
+            throw err;
+        }
+        user.isActive = isActive;
+        await user.save();
+        return user;
     }
     async updateSupplierStatus(id, status, rejectReason = null) {
         const user = await User.findByPk(id);

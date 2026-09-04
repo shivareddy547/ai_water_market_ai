@@ -52,6 +52,7 @@ class AuthService {
             throw err;
         }
         const allowedRoles = ['user', 'supplier', 'delivery', 'admin'];
+        // Automatically assign 'user' (Customer) role by default if not specified or invalid
         const finalRole = allowedRoles.includes(role) ? role : 'user';
         const user = await User.scope('withPassword').create({
             firstName: firstName.trim(),

@@ -5,8 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const app = express();
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cors());
 // Serve static files from public directory (for Swagger UI)
 app.use(express.static(path.join(__dirname, 'public')));
@@ -24,6 +24,7 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
+app.use('/api/delivery-team', require('./routes/deliveryTeamRoutes'));
 // Serve Swagger UI from public folder with cache control
 app.get('/api-docs', (req, res) => {
     const indexPath = path.join(__dirname, 'public', 'api-docs', 'index.html');

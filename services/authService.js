@@ -11,7 +11,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-t
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 class AuthService {
     async signup(payload) {
-        const { firstName, lastName, email, phone, password, role } = payload;
+        const { firstName, lastName, email, phone, password, role, storeName, businessType, gst, description, address, city, stateName, pincode } = payload;
         if (!firstName || !String(firstName).trim()) {
             const err = new Error('First name is required');
             err.status = 400;
@@ -61,6 +61,14 @@ class AuthService {
             phoneCountryCode: '+91',
             password,
             role: finalRole,
+            storeName: storeName || null,
+            businessType: businessType || null,
+            gst: gst || null,
+            description: description || null,
+            address: address || null,
+            city: city || null,
+            stateName: stateName || null,
+            pincode: pincode || null,
             emailVerified: false,
             phoneVerified: false,
             isActive: true

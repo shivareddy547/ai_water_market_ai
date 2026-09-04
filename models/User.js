@@ -91,6 +91,42 @@ module.exports = (sequelize) => {
             type: DataTypes.DATE,
             allowNull: true,
             field: 'last_login'
+        },
+        storeName: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            field: 'store_name'
+        },
+        businessType: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'business_type'
+        },
+        gst: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            field: 'gst'
+        },
+        description: {
+            type: DataTypes.TEXT,
+            allowNull: true
+        },
+        address: {
+            type: DataTypes.TEXT,
+            allowNull: true
+        },
+        city: {
+            type: DataTypes.STRING(100),
+            allowNull: true
+        },
+        stateName: {
+            type: DataTypes.STRING(100),
+            allowNull: true,
+            field: 'state_name'
+        },
+        pincode: {
+            type: DataTypes.STRING(20),
+            allowNull: true
         }
     }, {
         sequelize,

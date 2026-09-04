@@ -1,10 +1,25 @@
 'use strict';
-const { Category } = require('../models');
+const { Category, Product } = require('../models');
 class CategoryService {
     async getAllCategories() {
-        return await Category.findAll({
+        const categories = await Category.findAll({
             order: [['position', 'ASC']]
         });
+        const categoriesWithCounts = await Promise.all(
+            categories.map(async (cat) => {
+                const productCount = await Product.count({
+                    where: {
+                        categoryId: cat.id,
+                        status: 'active'
+                    }
+                });
+                return {
+                    ...cat.toJSON(),
+                    count: productCount
+                };
+            })
+        );
+        return categoriesWithCounts;
     }
     async createCategory(data) {
         const { name, icon, image, position } = data;

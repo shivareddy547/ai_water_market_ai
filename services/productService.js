@@ -1,6 +1,16 @@
 'use strict';
 const { Product } = require('../models');
 class ProductService {
+    async getAllActiveProducts(query = {}) {
+        const where = { status: 'active' };
+        if (query.categoryId && query.categoryId !== 'all') {
+            where.categoryId = query.categoryId;
+        }
+        return await Product.findAll({
+            where,
+            order: [['created_at', 'DESC']]
+        });
+    }
     async getProductsByUser(userId) {
         return await Product.findAll({
             where: { userId },

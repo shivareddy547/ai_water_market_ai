@@ -1,6 +1,14 @@
 'use strict';
 const productService = require('../services/productService');
 class ProductController {
+    async getAllPublic(req, res, next) {
+        try {
+            const products = await productService.getAllActiveProducts(req.query);
+            res.json({ success: true, data: products });
+        } catch (err) {
+            next(err);
+        }
+    }
     async getAll(req, res, next) {
         try {
             const products = await productService.getProductsByUser(req.user.id);

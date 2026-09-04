@@ -1,0 +1,17 @@
+'use strict';
+const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/authController');
+const authMiddleware = require('../middleware/authMiddleware');
+router.post('/signup', authController.signup);
+router.post('/login', authController.loginWithEmail);
+router.post('/send-otp', authController.sendOtp);
+router.post('/verify-otp', authController.verifyOtpLogin);
+router.post('/forgot-password/phone', authController.sendForgotOtpPhone);
+router.post('/verify-reset-otp', authController.verifyResetOtp);
+router.post('/reset-password', authController.resetPassword);
+router.post('/forgot-password/email', authController.sendForgotEmail);
+router.post('/reset-password-email', authController.resetPasswordEmail);
+router.get('/me', authMiddleware, authController.getMe);
+router.post('/logout', authController.logout);
+module.exports = router;

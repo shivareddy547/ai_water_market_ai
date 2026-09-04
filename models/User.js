@@ -1,0 +1,118 @@
+'use strict';
+const { Model, DataTypes } = require('sequelize');
+const bcrypt = require('bcryptjs');
+module.exports = (sequelize) => {
+    class User extends Model {
+        static associate(models) {
+            User.hasMany(models.Otp, {
+                foreignKey: 'user_id',
+                as: 'otps'
+            });
+        }
+        async comparePassword(password) {
+            if (!this.password) return false;
+            return bcrypt.compare(password, this.password);
+        }
+    }
+    User.init({
+        id: {
+            type: DataTypes.UUID,
+            defaultValue: DataTypes.UUIDV4,
+            primaryKey: true,
+            allowNull: false
+        },
+        firstName: {
+            type: DataTypes.STRING(100),
+            allowNull: false,
+            field: 'first_name',
+            validate: {
+                notEmpty: true
+            }
+        },
+        lastName: {
+            type: DataTypes.STRING(100),
+            allowNull: false,
+            field: 'last_name',
+            validate: {
+                notEmpty: true
+            }
+        },
+        email: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            unique: true,
+            field: 'email',
+            validate: {
+                isEmail: true
+            }
+        },
+        phone: {
+            type: DataTypes.STRING(20),
+            allowNull: true,
+            unique: true,
+            field: 'phone'
+        },
+        phoneCountryCode: {
+            type: DataTypes.STRING(10),
+            allowNull: true,
+            defaultValue: '+91',
+            field: 'phone_country_code'
+        },
+        password: {
+            type: DataTypes.STRING(255),
+            allowNull: true,
+            field: 'password'
+        },
+        role: {
+            type: DataTypes.ENUM('user', 'supplier', 'delivery', 'admin'),
+            allowNull: false,
+            defaultValue: 'user',
+            field: 'role'
+        },
+        emailVerified: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'email_verified'
+        },
+        phoneVerified: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'phone_verified'
+        },
+        isActive: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: true,
+            field: 'is_active'
+        },
+        lastLogin: {
+            type: DataTypes.DATE,
+            allowNull: true,
+            field: 'last_login'
+        }
+    }, {
+        sequelize,
+        modelName: 'User',
+        tableName: 'users',
+        timestamps: true,
+        underscored: true,
+        hooks: {
+            beforeSave: async (user) => {
+                if (user.changed('password') && user.password) {
+                    user.password = await bcrypt.hash(user.password, 10);
+                }
+            }
+        },
+        defaultScope: {
+            attributes: { exclude: ['password'] }
+        },
+        scopes: {
+            withPassword: {
+                attributes: {}
+            }
+        }
+    });
+    return User;
+};

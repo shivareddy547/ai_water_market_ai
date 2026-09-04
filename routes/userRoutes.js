@@ -1,0 +1,10 @@
+'use strict';
+const express = require('express');
+const router = express.Router();
+const userController = require('../controllers/userController');
+const authMiddleware = require('../middleware/authMiddleware');
+router.get('/suppliers', authMiddleware, userController.getSuppliers);
+router.put('/:id/status', authMiddleware, userController.updateStatus);
+router.put('/:id', authMiddleware, userController.updateUser);
+router.delete('/:id', authMiddleware, userController.deleteUser);
+module.exports = router;

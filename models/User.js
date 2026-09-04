@@ -127,6 +127,27 @@ module.exports = (sequelize) => {
         pincode: {
             type: DataTypes.STRING(20),
             allowNull: true
+        },
+        categories: {
+            type: DataTypes.ARRAY(DataTypes.STRING),
+            allowNull: true,
+            defaultValue: []
+        },
+        commission: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 10
+        },
+        verificationStatus: {
+            type: DataTypes.ENUM('pending', 'verified', 'rejected'),
+            allowNull: false,
+            defaultValue: 'pending',
+            field: 'verification_status'
+        },
+        rejectReason: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            field: 'reject_reason'
         }
     }, {
         sequelize,

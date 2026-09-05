@@ -8,6 +8,14 @@ module.exports = (sequelize) => {
                 foreignKey: 'user_id',
                 as: 'otps'
             });
+            User.hasMany(models.CustomerAddress, {
+                foreignKey: 'user_id',
+                as: 'addresses'
+            });
+            User.hasMany(models.CustomerOrder, {
+                foreignKey: 'user_id',
+                as: 'customerOrders'
+            });
         }
         async comparePassword(password) {
             if (!this.password) return false;
@@ -148,6 +156,12 @@ module.exports = (sequelize) => {
             type: DataTypes.STRING,
             allowNull: true,
             field: 'reject_reason'
+        },
+        cartData: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+            defaultValue: {},
+            field: 'cart_data'
         }
     }, {
         sequelize,

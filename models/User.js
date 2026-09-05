@@ -183,6 +183,12 @@ module.exports = (sequelize) => {
         website: {
             type: DataTypes.STRING,
             allowNull: true
+        },
+        wishlistData: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+            defaultValue: [],
+            field: 'wishlist_data'
         }
     }, {
         sequelize,

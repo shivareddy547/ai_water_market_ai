@@ -13,5 +13,6 @@ router.post('/reset-password', authController.resetPassword);
 router.post('/forgot-password/email', authController.sendForgotEmail);
 router.post('/reset-password-email', authController.resetPasswordEmail);
 router.get('/me', authMiddleware, authController.getMe);
+router.put('/wishlist', authMiddleware, authController.updateWishlist);
 router.post('/logout', authController.logout);
 module.exports = router;

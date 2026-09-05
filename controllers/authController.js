@@ -125,6 +125,24 @@ class AuthController {
             next(err);
         }
     }
+    async updateWishlist(req, res, next) {
+        try {
+            const { wishlistData } = req.body;
+            if (!Array.isArray(wishlistData)) {
+                const err = new Error('wishlistData must be an array of strings');
+                err.status = 400;
+                throw err;
+            }
+            const user = await authService.updateWishlist(req.user.id, wishlistData);
+            res.json({
+                success: true,
+                message: 'Wishlist updated successfully',
+                data: user.wishlistData || []
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
     async logout(req, res, next) {
         try {
             res.json({

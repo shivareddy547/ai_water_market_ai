@@ -52,7 +52,6 @@ class AuthService {
             throw err;
         }
         const allowedRoles = ['user', 'supplier', 'delivery', 'admin'];
-        // Automatically assign 'user' (Customer) role by default if not specified or invalid
         const finalRole = allowedRoles.includes(role) ? role : 'user';
         const user = await User.scope('withPassword').create({
             firstName: firstName.trim(),
@@ -386,6 +385,17 @@ class AuthService {
             throw err;
         }
         return this.sanitizeUser(user);
+    }
+    async updateWishlist(userId, wishlistData) {
+        const user = await User.findByPk(userId);
+        if (!user) {
+            const err = new Error('User not found');
+            err.status = 404;
+            throw err;
+        }
+        user.wishlistData = wishlistData;
+        await user.save();
+        return user;
     }
     generateToken(user) {
         return jwt.sign(

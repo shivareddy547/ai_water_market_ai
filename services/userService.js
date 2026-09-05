@@ -50,7 +50,7 @@ class UserService {
             err.status = 404;
             throw err;
         }
-        const { storeName, firstName, lastName, businessType, description, commission, categories, address, city, stateName, pincode, gst } = data;
+        const { storeName, firstName, lastName, businessType, description, commission, categories, address, city, stateName, pincode, gst, logo, coverImage, warehouseAddresses, tagline, whatsapp, website } = data;
         if (storeName !== undefined) user.storeName = storeName;
         if (firstName !== undefined) user.firstName = firstName;
         if (lastName !== undefined) user.lastName = lastName;
@@ -63,6 +63,12 @@ class UserService {
         if (stateName !== undefined) user.stateName = stateName;
         if (pincode !== undefined) user.pincode = pincode;
         if (gst !== undefined) user.gst = gst;
+        if (logo !== undefined) user.logo = logo;
+        if (coverImage !== undefined) user.coverImage = coverImage;
+        if (warehouseAddresses !== undefined) user.warehouseAddresses = warehouseAddresses;
+        if (tagline !== undefined) user.tagline = tagline;
+        if (whatsapp !== undefined) user.whatsapp = whatsapp;
+        if (website !== undefined) user.website = website;
         await user.save();
         return user;
     }

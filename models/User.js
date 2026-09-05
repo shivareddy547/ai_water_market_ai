@@ -33,26 +33,20 @@ module.exports = (sequelize) => {
             type: DataTypes.STRING(100),
             allowNull: false,
             field: 'first_name',
-            validate: {
-                notEmpty: true
-            }
+            validate: { notEmpty: true }
         },
         lastName: {
             type: DataTypes.STRING(100),
             allowNull: false,
             field: 'last_name',
-            validate: {
-                notEmpty: true
-            }
+            validate: { notEmpty: true }
         },
         email: {
             type: DataTypes.STRING(255),
             allowNull: true,
             unique: true,
             field: 'email',
-            validate: {
-                isEmail: true
-            }
+            validate: { isEmail: true }
         },
         phone: {
             type: DataTypes.STRING(20),
@@ -162,6 +156,33 @@ module.exports = (sequelize) => {
             allowNull: true,
             defaultValue: {},
             field: 'cart_data'
+        },
+        logo: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        coverImage: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            field: 'cover_image'
+        },
+        warehouseAddresses: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+            defaultValue: [],
+            field: 'warehouse_addresses'
+        },
+        tagline: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        whatsapp: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        website: {
+            type: DataTypes.STRING,
+            allowNull: true
         }
     }, {
         sequelize,
@@ -180,9 +201,7 @@ module.exports = (sequelize) => {
             attributes: { exclude: ['password'] }
         },
         scopes: {
-            withPassword: {
-                attributes: {}
-            }
+            withPassword: { attributes: {} }
         }
     });
     return User;

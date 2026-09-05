@@ -9,6 +9,7 @@ const smsService = require('./smsService');
 const { emailOk, phoneOk, normalizePhone } = require('../utils/validators');
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+
 class AuthService {
     async signup(payload) {
         const { firstName, lastName, email, phone, password, role, storeName, businessType, gst, description, address, city, stateName, pincode } = payload;
@@ -79,6 +80,129 @@ class AuthService {
             token
         };
     }
+    
+    async createDeliveryPerson(supplierId, payload) {
+        const { firstName, lastName, email, phone, password } = payload;
+        
+        if (!firstName || !email || !password) {
+            const err = new Error('First name, email, and password are required');
+            err.status = 400;
+            throw err;
+        }
+        if (password.length < 6) {
+            const err = new Error('Password must be at least 6 characters');
+            err.status = 400;
+            throw err;
+        }
+        if (!/^\S+@\S+\.\S+$/.test(email)) {
+            const err = new Error('Enter a valid email address');
+            err.status = 400;
+            throw err;
+        }
+        
+        let normalizedPhone = null;
+        if (phone) {
+            const digits = phone.replace(/\D/g, '');
+            if (digits.length < 10) {
+                const err = new Error('Enter a valid mobile number (at least 10 digits)');
+                err.status = 400;
+                throw err;
+            }
+            normalizedPhone = `+91 ${digits.slice(-10)}`;
+            
+            const existingPhone = await User.findOne({ where: { phone: normalizedPhone } });
+            if (existingPhone) {
+                const err = new Error('Phone number is already registered');
+                err.status = 409;
+                throw err;
+            }
+        }
+        
+        const normalizedEmail = email.toLowerCase().trim();
+        const existingEmail = await User.findOne({ where: { email: normalizedEmail } });
+        if (existingEmail) {
+            const err = new Error('Email is already registered');
+            err.status = 409;
+            throw err;
+        }
+        
+        const user = await User.scope('withPassword').create({
+            firstName: firstName.trim(),
+            lastName: (lastName && lastName.trim()) ? lastName.trim() : 'N/A',
+            email: normalizedEmail,
+            phone: normalizedPhone,
+            password,
+            role: 'delivery',
+            supplierId: supplierId,
+            isActive: true,
+            emailVerified: false,
+            phoneVerified: false
+        });
+        return this.sanitizeUser(user);
+    }
+    
+    async updateDeliveryPerson(userId, payload) {
+        const { email, phone, password } = payload;
+        const user = await User.findByPk(userId);
+        if (!user) {
+            const err = new Error('User not found');
+            err.status = 404;
+            throw err;
+        }
+        
+        if (email !== undefined) {
+            if (!/^\S+@\S+\.\S+$/.test(email)) {
+                const err = new Error('Enter a valid email address');
+                err.status = 400;
+                throw err;
+            }
+            const normalizedEmail = email.toLowerCase().trim();
+            if (user.email !== normalizedEmail) {
+                const existing = await User.findOne({ where: { email: normalizedEmail } });
+                if (existing && existing.id !== userId) {
+                    const err = new Error('Email is already registered');
+                    err.status = 409;
+                    throw err;
+                }
+                user.email = normalizedEmail;
+            }
+        }
+        
+        if (phone !== undefined) {
+            let normalizedPhone = null;
+            if (phone) {
+                const digits = phone.replace(/\D/g, '');
+                if (digits.length < 10) {
+                    const err = new Error('Enter a valid mobile number (at least 10 digits)');
+                    err.status = 400;
+                    throw err;
+                }
+                normalizedPhone = `+91 ${digits.slice(-10)}`;
+            }
+            if (user.phone !== normalizedPhone) {
+                const existing = await User.findOne({ where: { phone: normalizedPhone } });
+                if (existing && existing.id !== userId) {
+                    const err = new Error('Phone number is already registered');
+                    err.status = 409;
+                    throw err;
+                }
+                user.phone = normalizedPhone;
+            }
+        }
+        
+        if (password) {
+            if (password.length < 6) {
+                const err = new Error('Password must be at least 6 characters');
+                err.status = 400;
+                throw err;
+            }
+            user.password = password; // Hashed by hook
+        }
+        
+        await user.save();
+        return this.sanitizeUser(user);
+    }
+
     async loginWithEmail(email, password) {
         if (!email || !password) {
             const err = new Error('Email and password are required');
@@ -117,6 +241,7 @@ class AuthService {
             token
         };
     }
+    
     async sendOtp(phone, purpose) {
         if (!phone) {
             const err = new Error('Phone number is required');

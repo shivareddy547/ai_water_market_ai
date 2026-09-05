@@ -13,6 +13,35 @@ class AuthController {
             next(err);
         }
     }
+    async createDeliveryPerson(req, res, next) {
+        try {
+            if (req.user.role !== 'supplier') {
+                const err = new Error('Only suppliers can create delivery person accounts');
+                err.status = 403;
+                throw err;
+            }
+            const result = await authService.createDeliveryPerson(req.user.id, req.body);
+            res.status(201).json({
+                success: true,
+                message: 'Delivery person account created successfully',
+                data: result
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
+    async updateDeliveryPerson(req, res, next) {
+        try {
+            const result = await authService.updateDeliveryPerson(req.params.id, req.body);
+            res.json({
+                success: true,
+                message: 'Delivery person account updated successfully',
+                data: result
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
     async loginWithEmail(req, res, next) {
         try {
             const { email, password } = req.body;

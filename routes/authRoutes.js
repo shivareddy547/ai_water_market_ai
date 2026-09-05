@@ -4,6 +4,8 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 router.post('/signup', authController.signup);
+router.post('/create-delivery-person', authMiddleware, authController.createDeliveryPerson);
+router.put('/delivery-person/:id', authMiddleware, authController.updateDeliveryPerson);
 router.post('/login', authController.loginWithEmail);
 router.post('/send-otp', authController.sendOtp);
 router.post('/verify-otp', authController.verifyOtpLogin);

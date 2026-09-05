@@ -71,6 +71,11 @@ module.exports = (sequelize) => {
             defaultValue: 'user',
             field: 'role'
         },
+        supplierId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            field: 'supplier_id'
+        },
         emailVerified: {
             type: DataTypes.BOOLEAN,
             allowNull: false,

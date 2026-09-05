@@ -1,22 +1,34 @@
 'use strict';
 const { SupplierOrder } = require('../models');
+
 class SupplierOrderService {
-    async getOrdersByUserId(userId) {
-        let orderDoc = await SupplierOrder.findOne({ where: { userId } });
-        if (!orderDoc) {
-            orderDoc = await SupplierOrder.create({ userId, orders: [] });
-        }
-        return orderDoc.orders;
+    async getOrdersByUser(userId) {
+        // Fetch all records to be safe against duplicate entries
+        const orders = await SupplierOrder.findAll({ where: { userId } });
+        let allOrders = [];
+        orders.forEach(order => {
+            if (Array.isArray(order.orders)) {
+                allOrders = allOrders.concat(order.orders);
+            }
+        });
+        return allOrders;
     }
+
     async updateOrders(userId, orders) {
-        let orderDoc = await SupplierOrder.findOne({ where: { userId } });
-        if (!orderDoc) {
-            orderDoc = await SupplierOrder.create({ userId, orders });
+        // Find the primary record for the user
+        let record = await SupplierOrder.findOne({ 
+            where: { userId }, 
+            order: [['created_at', 'DESC']] 
+        });
+        
+        if (record) {
+            record.orders = orders;
+            await record.save();
+            return record;
         } else {
-            orderDoc.orders = orders;
-            await orderDoc.save();
+            return await SupplierOrder.create({ userId, orders });
         }
-        return orderDoc.orders;
     }
 }
+
 module.exports = new SupplierOrderService();

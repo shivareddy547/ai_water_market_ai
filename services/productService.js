@@ -1,14 +1,30 @@
 'use strict';
-const { Product } = require('../models');
+const { Product, User } = require('../models');
 class ProductService {
     async getAllActiveProducts(query = {}) {
         const where = { status: 'active' };
         if (query.categoryId && query.categoryId !== 'all') {
             where.categoryId = query.categoryId;
         }
-        return await Product.findAll({
+        const products = await Product.findAll({
             where,
+            include: [{
+                model: User,
+                as: 'user',
+                attributes: ['id', 'first_name', 'last_name', 'store_name']
+            }],
             order: [['created_at', 'DESC']]
+        });
+        return products.map(p => {
+            const item = p.toJSON();
+            const u = item.user || {};
+            const storeName = u.store_name || u.storeName || '';
+            const firstName = u.first_name || u.firstName || '';
+            const lastName = u.last_name || u.lastName || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+            item.supplierId = u.id || item.userId;
+            item.supplierName = storeName || fullName || `Supplier #${(item.supplierId || '').slice(-6).toUpperCase()}`;
+            return item;
         });
     }
     async getProductsByUser(userId) {

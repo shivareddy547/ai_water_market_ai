@@ -53,6 +53,12 @@ module.exports = (sequelize) => {
             allowNull: false,
             defaultValue: 'draft'
         },
+        isPopular: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'is_popular'
+        },
         warehouseIds: {
             type: DataTypes.ARRAY(DataTypes.STRING),
             allowNull: true,

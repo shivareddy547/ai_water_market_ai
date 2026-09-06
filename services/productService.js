@@ -43,7 +43,7 @@ class ProductService {
         return product;
     }
     async createProduct(userId, data) {
-        const { name, brand, categoryId, description, images, videos, status, warehouseIds, variants } = data;
+        const { name, brand, categoryId, description, images, videos, status, isPopular, warehouseIds, variants } = data;
         if (!name) {
             const err = new Error('Product name is required');
             err.status = 400;
@@ -58,6 +58,7 @@ class ProductService {
             images: images || [],
             videos: videos || [],
             status: status || 'draft',
+            isPopular: isPopular === true,
             warehouseIds: warehouseIds || [],
             variants: variants || []
         });
@@ -69,7 +70,7 @@ class ProductService {
             err.status = 404;
             throw err;
         }
-        const { name, brand, categoryId, description, images, videos, status, warehouseIds, variants } = data;
+        const { name, brand, categoryId, description, images, videos, status, isPopular, warehouseIds, variants } = data;
         if (name !== undefined) product.name = name;
         if (brand !== undefined) product.brand = brand;
         if (categoryId !== undefined) product.categoryId = categoryId;
@@ -77,6 +78,7 @@ class ProductService {
         if (images !== undefined) product.images = images;
         if (videos !== undefined) product.videos = videos;
         if (status !== undefined) product.status = status;
+        if (isPopular !== undefined) product.isPopular = isPopular === true;
         if (warehouseIds !== undefined) product.warehouseIds = warehouseIds;
         if (variants !== undefined) product.variants = variants;
         await product.save();

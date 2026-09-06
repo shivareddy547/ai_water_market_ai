@@ -69,6 +69,17 @@ module.exports = (sequelize) => {
             type: DataTypes.JSONB,
             allowNull: true,
             defaultValue: []
+        },
+        rating: {
+            type: DataTypes.FLOAT,
+            allowNull: false,
+            defaultValue: 0
+        },
+        reviewCount: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            defaultValue: 0,
+            field: 'review_count'
         }
     }, {
         sequelize,

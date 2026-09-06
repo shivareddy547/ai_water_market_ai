@@ -32,6 +32,7 @@ app.use('/api/customer-orders', require('./routes/customerOrderRoutes'));
 app.use('/api/delivery-routes', require('./routes/deliveryRouteRoutes'));
 app.use('/api/settings', require('./routes/settingRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/reviews', require('./routes/reviewRoutes'));
 // Serve Swagger UI from public folder with cache control
 app.get('/api-docs', (req, res) => {
     const indexPath = path.join(__dirname, 'public', 'api-docs', 'index.html');

@@ -11,7 +11,7 @@ class ProductService {
             include: [{
                 model: User,
                 as: 'user',
-                attributes: ['id', 'first_name', 'last_name', 'store_name']
+                attributes: ['id', 'first_name', 'last_name', 'store_name', 'warehouseAddresses']
             }],
             order: [['created_at', 'DESC']]
         });
@@ -37,7 +37,7 @@ class ProductService {
             include: [{
                 model: User,
                 as: 'user',
-                attributes: ['id', 'first_name', 'last_name', 'store_name']
+                attributes: ['id', 'first_name', 'last_name', 'store_name', 'warehouseAddresses']
             }],
             order: [['created_at', 'DESC']]
         });

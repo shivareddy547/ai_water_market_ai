@@ -9,6 +9,14 @@ class ProductController {
             next(err);
         }
     }
+    async getPopularProducts(req, res, next) {
+        try {
+            const products = await productService.getPopularProducts();
+            res.json({ success: true, data: products });
+        } catch (err) {
+            next(err);
+        }
+    }
     async getAll(req, res, next) {
         try {
             const products = await productService.getProductsByUser(req.user.id);

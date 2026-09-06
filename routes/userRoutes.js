@@ -7,6 +7,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.get('/public-suppliers', userController.getSuppliers);
 router.get('/', authMiddleware, userController.getUsers);
 router.get('/suppliers', authMiddleware, userController.getSuppliers);
+router.get('/:id', authMiddleware, userController.getUser);
 router.put('/:id/status', authMiddleware, userController.updateStatus);
 router.put('/:id/active', authMiddleware, userController.updateUserActive);
 router.put('/:id', authMiddleware, userController.updateUser);

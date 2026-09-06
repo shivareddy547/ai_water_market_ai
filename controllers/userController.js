@@ -1,6 +1,14 @@
 'use strict';
 const userService = require('../services/userService');
 class UserController {
+    async getUser(req, res, next) {
+        try {
+            const user = await userService.getUserById(req.params.id);
+            res.json({ success: true, data: user });
+        } catch (err) {
+            next(err);
+        }
+    }
     async getUsers(req, res, next) {
         try {
             const role = req.query.role || 'user';

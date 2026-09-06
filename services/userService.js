@@ -1,6 +1,15 @@
 'use strict';
 const { User } = require('../models');
 class UserService {
+    async getUserById(id) {
+        const user = await User.findByPk(id);
+        if (!user) {
+            const err = new Error('User not found');
+            err.status = 404;
+            throw err;
+        }
+        return user;
+    }
     async getUsersByRole(role) {
         return await User.findAll({
             where: { role: role },

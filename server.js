@@ -31,11 +31,11 @@ app.use('/api/addresses', require('./routes/addressRoutes'));
 app.use('/api/customer-orders', require('./routes/customerOrderRoutes'));
 app.use('/api/delivery-routes', require('./routes/deliveryRouteRoutes'));
 app.use('/api/settings', require('./routes/settingRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 // Serve Swagger UI from public folder with cache control
 app.get('/api-docs', (req, res) => {
     const indexPath = path.join(__dirname, 'public', 'api-docs', 'index.html');
     if (fs.existsSync(indexPath)) {
-        // Disable caching
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
         res.setHeader('Pragma', 'no-cache');
         res.setHeader('Expires', '0');
@@ -47,10 +47,8 @@ app.get('/api-docs', (req, res) => {
         `);
     }
 });
-// Serve swagger.json with cache headers disabled
 app.get('/api-docs/swagger.json', (req, res) => {
     const jsonPath = path.join(__dirname, 'public', 'api-docs', 'swagger.json');
-    // Disable caching
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -64,14 +62,12 @@ app.get('/api-docs/swagger.json', (req, res) => {
         });
     }
 });
-// 404 handler for API routes
 app.use(/^\/api/, (req, res) => {
     res.status(404).json({
         error: 'Not Found',
         message: `Cannot ${req.method} ${req.url}`
     });
 });
-// Global error handler
 app.use((err, req, res, next) => {
     console.error('Error:', err.stack);
     res.status(err.status || 500).json({

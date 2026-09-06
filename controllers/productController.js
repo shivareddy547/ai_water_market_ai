@@ -19,6 +19,10 @@ class ProductController {
     }
     async getAll(req, res, next) {
         try {
+            if (req.user.role === 'admin') {
+                const products = await productService.getAllProducts();
+                return res.json({ success: true, data: products });
+            }
             const products = await productService.getProductsByUser(req.user.id);
             res.json({ success: true, data: products });
         } catch (err) {
@@ -27,7 +31,7 @@ class ProductController {
     }
     async getById(req, res, next) {
         try {
-            const product = await productService.getProductById(req.params.id, req.user.id);
+            const product = await productService.getProductById(req.params.id, req.user.id, req.user.role);
             res.json({ success: true, data: product });
         } catch (err) {
             next(err);
@@ -43,7 +47,7 @@ class ProductController {
     }
     async update(req, res, next) {
         try {
-            const product = await productService.updateProduct(req.params.id, req.user.id, req.body);
+            const product = await productService.updateProduct(req.params.id, req.user.id, req.body, req.user.role);
             res.json({ success: true, data: product, message: 'Product updated successfully' });
         } catch (err) {
             next(err);
@@ -51,7 +55,7 @@ class ProductController {
     }
     async delete(req, res, next) {
         try {
-            const result = await productService.deleteProduct(req.params.id, req.user.id);
+            const result = await productService.deleteProduct(req.params.id, req.user.id, req.user.role);
             res.json({ success: true, message: result.message });
         } catch (err) {
             next(err);

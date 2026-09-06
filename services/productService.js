@@ -53,14 +53,36 @@ class ProductService {
             return item;
         });
     }
+    async getAllProducts() {
+        const products = await Product.findAll({
+            include: [{
+                model: User,
+                as: 'user',
+                attributes: ['id', 'first_name', 'last_name', 'store_name', 'warehouseAddresses']
+            }],
+            order: [['created_at', 'DESC']]
+        });
+        return products.map(p => {
+            const item = p.toJSON();
+            const u = item.user || {};
+            const storeName = u.store_name || u.storeName || '';
+            const firstName = u.first_name || u.firstName || '';
+            const lastName = u.last_name || u.lastName || '';
+            const fullName = `${firstName} ${lastName}`.trim();
+            item.supplierId = u.id || item.userId;
+            item.supplierName = storeName || fullName || `Supplier #${(item.supplierId || '').slice(-6).toUpperCase()}`;
+            return item;
+        });
+    }
     async getProductsByUser(userId) {
         return await Product.findAll({
             where: { userId },
             order: [['created_at', 'DESC']]
         });
     }
-    async getProductById(id, userId) {
-        const product = await Product.findOne({ where: { id, userId } });
+    async getProductById(id, userId, userRole) {
+        const where = userRole === 'admin' ? { id } : { id, userId };
+        const product = await Product.findOne({ where });
         if (!product) {
             const err = new Error('Product not found');
             err.status = 404;
@@ -89,8 +111,9 @@ class ProductService {
             variants: variants || []
         });
     }
-    async updateProduct(id, userId, data) {
-        const product = await Product.findOne({ where: { id, userId } });
+    async updateProduct(id, userId, data, userRole) {
+        const where = userRole === 'admin' ? { id } : { id, userId };
+        const product = await Product.findOne({ where });
         if (!product) {
             const err = new Error('Product not found or you do not have permission to update it');
             err.status = 404;
@@ -110,8 +133,9 @@ class ProductService {
         await product.save();
         return product;
     }
-    async deleteProduct(id, userId) {
-        const product = await Product.findOne({ where: { id, userId } });
+    async deleteProduct(id, userId, userRole) {
+        const where = userRole === 'admin' ? { id } : { id, userId };
+        const product = await Product.findOne({ where });
         if (!product) {
             const err = new Error('Product not found or you do not have permission to delete it');
             err.status = 404;

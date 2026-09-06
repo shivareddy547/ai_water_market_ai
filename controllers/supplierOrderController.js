@@ -18,7 +18,7 @@ class SupplierOrderController {
                 err.status = 400;
                 throw err;
             }
-            const updatedOrder = await supplierOrderService.updateOrderStatus(orderId, req.user.id, req.user.role, status);
+            const updatedOrder = await supplierOrderService.updateOrderStatus(orderId, req.user, status);
             res.json({ success: true, data: updatedOrder, message: 'Order status updated successfully' });
         } catch (err) {
             next(err);

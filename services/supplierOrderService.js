@@ -3,7 +3,6 @@ const { SupplierOrder, User, DeliveryTeam } = require('../models');
 class SupplierOrderService {
     async getOrdersByUser(userId, role) {
         if (role === 'delivery') {
-            // 1. Find the internal delivery person ID using the user ID
             let deliveryPersonId = null;
             const allTeams = await DeliveryTeam.findAll();
             for (const team of allTeams) {
@@ -17,7 +16,6 @@ class SupplierOrderService {
             if (!deliveryPersonId) {
                 return [];
             }
-            // 2. Fetch all supplier orders and filter by the internal delivery person ID
             const supplierOrders = await SupplierOrder.findAll({
                 include: [{
                     model: User,
@@ -44,16 +42,19 @@ class SupplierOrderService {
         }
         return supplierOrder.orders;
     }
-    async updateOrderStatus(orderId, userId, role, status) {
+    async updateOrderStatus(orderId, user, status) {
+        const { id: userId, role } = user;
+        const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         if (role === 'delivery') {
-            // 1. Find the internal delivery person ID using the user ID
             let deliveryPersonId = null;
+            let deliveryPersonName = 'Delivery Person';
             const allTeams = await DeliveryTeam.findAll();
             for (const team of allTeams) {
                 const teamData = team.data || { persons: [] };
                 const person = teamData.persons.find(p => p.userId === userId);
                 if (person) {
                     deliveryPersonId = person.id;
+                    deliveryPersonName = person.fullName || 'Delivery Person';
                     break;
                 }
             }
@@ -66,7 +67,27 @@ class SupplierOrderService {
             for (const so of supplierOrders) {
                 const orderIndex = so.orders.findIndex(o => o.id === orderId && o.deliveryPersonId === deliveryPersonId);
                 if (orderIndex !== -1) {
-                    so.orders[orderIndex].status = status;
+                    const orders = [...so.orders];
+                    const updatedOrder = {
+                        ...orders[orderIndex],
+                        status: status,
+                        statusHistory: [
+                            ...(orders[orderIndex].statusHistory || []),
+                            { status, time: nowTime, by: deliveryPersonName }
+                        ]
+                    };
+                    if (status === 'On The Way' || status === 'Out for Delivery') {
+                        updatedOrder.startedAt = nowTime;
+                    }
+                    if (status === 'Delivered') {
+                        updatedOrder.deliveredAt = nowTime;
+                        if (updatedOrder.paymentMode === 'COD') {
+                            updatedOrder.paymentStatus = 'Paid';
+                        }
+                    }
+                    orders[orderIndex] = updatedOrder;
+                    so.orders = orders;
+                    so.changed('orders', true);
                     await so.save();
                     return so.orders[orderIndex];
                 }
@@ -87,7 +108,28 @@ class SupplierOrderService {
             err.status = 404;
             throw err;
         }
-        supplierOrder.orders[orderIndex].status = status;
+        const supplierName = user.firstName ? `${user.firstName} ${user.lastName}`.trim() : 'Supplier';
+        const orders = [...supplierOrder.orders];
+        const updatedOrder = {
+            ...orders[orderIndex],
+            status: status,
+            statusHistory: [
+                ...(orders[orderIndex].statusHistory || []),
+                { status, time: nowTime, by: supplierName }
+            ]
+        };
+        if (status === 'On The Way' || status === 'Out for Delivery') {
+            updatedOrder.startedAt = nowTime;
+        }
+        if (status === 'Delivered') {
+            updatedOrder.deliveredAt = nowTime;
+            if (updatedOrder.paymentMode === 'COD') {
+                updatedOrder.paymentStatus = 'Paid';
+            }
+        }
+        orders[orderIndex] = updatedOrder;
+        supplierOrder.orders = orders;
+        supplierOrder.changed('orders', true);
         await supplierOrder.save();
         return supplierOrder.orders[orderIndex];
     }
@@ -97,6 +139,7 @@ class SupplierOrderService {
             supplierOrder = await SupplierOrder.create({ userId, orders });
         } else {
             supplierOrder.orders = orders;
+            supplierOrder.changed('orders', true);
             await supplierOrder.save();
         }
         return supplierOrder.orders;

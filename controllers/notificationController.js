@@ -34,5 +34,18 @@ class NotificationController {
             next(err);
         }
     }
+    async sendAdminNotification(req, res, next) {
+        try {
+            if (req.user.role !== 'admin') {
+                const err = new Error('Not authorized');
+                err.status = 403;
+                throw err;
+            }
+            const result = await notificationService.sendAdminNotification(req.user.id, req.body);
+            res.status(201).json({ success: true, message: result.message, data: result });
+        } catch (err) {
+            next(err);
+        }
+    }
 }
 module.exports = new NotificationController();

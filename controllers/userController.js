@@ -26,6 +26,14 @@ class UserController {
             next(err);
         }
     }
+    async getFeaturedSuppliers(req, res, next) {
+        try {
+            const users = await userService.getFeaturedSuppliers();
+            res.json({ success: true, data: users });
+        } catch (err) {
+            next(err);
+        }
+    }
     async updateUserActive(req, res, next) {
         try {
             const { isActive } = req.body;
@@ -50,6 +58,20 @@ class UserController {
             }
             const user = await userService.updateSupplierStatus(req.params.id, status, rejectReason);
             res.json({ success: true, data: user, message: 'Status updated successfully' });
+        } catch (err) {
+            next(err);
+        }
+    }
+    async updateFeatured(req, res, next) {
+        try {
+            const { isFeatured } = req.body;
+            if (typeof isFeatured !== 'boolean') {
+                const err = new Error('Invalid featured flag');
+                err.status = 400;
+                throw err;
+            }
+            const user = await userService.updateSupplierFeatured(req.params.id, isFeatured);
+            res.json({ success: true, data: user, message: 'Featured status updated successfully' });
         } catch (err) {
             next(err);
         }

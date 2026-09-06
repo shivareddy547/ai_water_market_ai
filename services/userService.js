@@ -22,6 +22,17 @@ class UserService {
             order: [['created_at', 'DESC']]
         });
     }
+    async getFeaturedSuppliers() {
+        return await User.findAll({
+            where: {
+                role: 'supplier',
+                isFeatured: true,
+                verificationStatus: 'verified',
+                isActive: true
+            },
+            order: [['created_at', 'DESC']]
+        });
+    }
     async updateUserActive(id, isActive) {
         const user = await User.findByPk(id);
         if (!user) {
@@ -52,6 +63,17 @@ class UserService {
         await user.save();
         return user;
     }
+    async updateSupplierFeatured(id, isFeatured) {
+        const user = await User.findByPk(id);
+        if (!user) {
+            const err = new Error('User not found');
+            err.status = 404;
+            throw err;
+        }
+        user.isFeatured = isFeatured;
+        await user.save();
+        return user;
+    }
     async updateSupplier(id, data) {
         const user = await User.findByPk(id);
         if (!user) {
@@ -59,7 +81,7 @@ class UserService {
             err.status = 404;
             throw err;
         }
-        const { storeName, firstName, lastName, businessType, description, commission, categories, address, city, stateName, pincode, gst, logo, coverImage, warehouseAddresses, tagline, whatsapp, website } = data;
+        const { storeName, firstName, lastName, businessType, description, commission, categories, address, city, stateName, pincode, gst, logo, coverImage, warehouseAddresses, tagline, whatsapp, website, isFeatured } = data;
         if (storeName !== undefined) user.storeName = storeName;
         if (firstName !== undefined) user.firstName = firstName;
         if (lastName !== undefined) user.lastName = lastName;
@@ -78,6 +100,7 @@ class UserService {
         if (tagline !== undefined) user.tagline = tagline;
         if (whatsapp !== undefined) user.whatsapp = whatsapp;
         if (website !== undefined) user.website = website;
+        if (isFeatured !== undefined) user.isFeatured = isFeatured;
         await user.save();
         return user;
     }

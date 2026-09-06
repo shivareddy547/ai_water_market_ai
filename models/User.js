@@ -156,6 +156,12 @@ module.exports = (sequelize) => {
             allowNull: true,
             field: 'reject_reason'
         },
+        isFeatured: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'is_featured'
+        },
         cartData: {
             type: DataTypes.JSONB,
             allowNull: true,

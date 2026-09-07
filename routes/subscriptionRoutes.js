@@ -1,0 +1,13 @@
+'use strict';
+const express = require('express');
+const router = express.Router();
+const subscriptionController = require('../controllers/subscriptionController');
+const authMiddleware = require('../middleware/authMiddleware');
+router.get('/', authMiddleware, subscriptionController.getAll);
+router.put('/:id', authMiddleware, subscriptionController.update);
+router.post('/:id/pause', authMiddleware, subscriptionController.pause);
+router.post('/:id/resume', authMiddleware, subscriptionController.resume);
+router.post('/:id/cancel', authMiddleware, subscriptionController.cancel);
+router.post('/:id/deliver-now', authMiddleware, subscriptionController.deliverNow);
+router.post('/:id/skip-next', authMiddleware, subscriptionController.skipNext);
+module.exports = router;

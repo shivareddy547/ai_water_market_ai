@@ -3,11 +3,10 @@ const express = require('express');
 const router = express.Router();
 const subscriptionController = require('../controllers/subscriptionController');
 const authMiddleware = require('../middleware/authMiddleware');
-router.get('/', authMiddleware, subscriptionController.getAll);
-router.put('/:id', authMiddleware, subscriptionController.update);
-router.post('/:id/pause', authMiddleware, subscriptionController.pause);
-router.post('/:id/resume', authMiddleware, subscriptionController.resume);
-router.post('/:id/cancel', authMiddleware, subscriptionController.cancel);
-router.post('/:id/deliver-now', authMiddleware, subscriptionController.deliverNow);
-router.post('/:id/skip-next', authMiddleware, subscriptionController.skipNext);
+
+router.post('/', authMiddleware, subscriptionController.createSubscription);
+router.get('/', authMiddleware, subscriptionController.getMySubscriptions);
+router.put('/:id/status', authMiddleware, subscriptionController.updateStatus);
+router.delete('/:id', authMiddleware, subscriptionController.deleteSubscription);
+
 module.exports = router;

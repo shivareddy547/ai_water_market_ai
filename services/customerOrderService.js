@@ -11,22 +11,13 @@ function nowStamp() {
     });
 }
 
-function nextOrderNumber(prefix, n) {
-    return `${prefix}-${String(n).padStart(4, '0')}`;
-}
-
-async function peekNextSeq() {
-    const last = await CustomerOrder.findOne({
-        order: [['created_at', 'DESC']]
-    });
-    if (!last || !last.orderNumber) return 1001;
-    const m = String(last.orderNumber).match(/(\d+)/);
-    return m ? parseInt(m[1], 10) + 1 : 1001;
+function makeOrderNumber(prefix) {
+    return `${prefix}-${Date.now()}${Math.floor(Math.random() * 100)}`;
 }
 
 function calcNextDelivery(frequency, customDays) {
     const d = new Date();
-    const f = (frequency || '').toLowerCase();
+    const f = String(frequency || '').toLowerCase();
     if (f === 'daily') d.setDate(d.getDate() + 1);
     else if (f === 'alternate days') d.setDate(d.getDate() + 2);
     else if (f === 'weekly') d.setDate(d.getDate() + 7);
@@ -36,6 +27,41 @@ function calcNextDelivery(frequency, customDays) {
         d.setDate(d.getDate() + days);
     }
     return d;
+}
+
+/** Always persist isSubscription + frequency on every line */
+function normalizeLine(l) {
+    const isSub =
+        l.isSubscription === true ||
+        l.isSubscription === 'true' ||
+        l.isSubscription === 1 ||
+        String(l.isSubscription || '').toLowerCase() === 'yes';
+
+    const frequency = isSub ? (l.frequency || 'Monthly') : null;
+
+    const unitPrice =
+        isSub && l.subscriptionPrice != null && l.subscriptionPrice !== ''
+            ? Number(l.subscriptionPrice)
+            : Number(l.price || 0);
+
+    return {
+        productId: l.productId || null,
+        variantId: l.variantId || l.variantKey || null,
+        variantKey: l.variantKey || null,
+        name: l.name || l.variantName || l.productName || 'Item',
+        qty: Number(l.qty) || 1,
+        price: unitPrice,
+        subscriptionPrice:
+            l.subscriptionPrice != null ? Number(l.subscriptionPrice) : null,
+        deposit: Number(l.deposit) || 0,
+        warehouseId: l.warehouseId || '',
+        warehouseName: l.warehouseName || '',
+        isSubscription: isSub,
+        frequency,
+        image: l.image || null,
+        sku: l.sku || null,
+        categoryIcon: l.categoryIcon || '💧'
+    };
 }
 
 class CustomerOrderService {
@@ -55,52 +81,35 @@ class CustomerOrderService {
             throw err;
         }
 
-        const customerName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Customer';
+        const customerName =
+            `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Customer';
         const placedAt = nowStamp();
-        let seq = await peekNextSeq();
-        const parentOrderNumber = nextOrderNumber('PO', seq);
-        seq += 1;
+        const parentOrderNumber = makeOrderNumber('PO');
 
         const builtSubOrders = [];
         const subscriptionCreates = [];
+        const supplierPushes = [];
 
         for (const so of subOrders) {
-            const subId = nextOrderNumber('ORD', seq);
-            seq += 1;
-
-            const lines = (so.lines || []).map((l) => {
-                const isSub = !!l.isSubscription;
-                const unitPrice = isSub && l.subscriptionPrice != null
-                    ? Number(l.subscriptionPrice)
-                    : Number(l.price || 0);
-                return {
-                    productId: l.productId || null,
-                    variantId: l.variantId || l.variantKey || null,
-                    variantKey: l.variantKey || null,
-                    name: l.name || l.variantName || l.productName || 'Item',
-                    qty: Number(l.qty) || 1,
-                    price: unitPrice,
-                    deposit: Number(l.deposit) || 0,
-                    warehouseId: l.warehouseId || '',
-                    warehouseName: l.warehouseName || '',
-                    isSubscription: isSub,
-                    frequency: l.frequency || null,
-                    image: l.image || null,
-                    sku: l.sku || null,
-                    categoryIcon: l.categoryIcon || null
-                };
-            });
+            const subId = makeOrderNumber('ORD');
+            const lines = (so.lines || []).map(normalizeLine);
 
             const itemsTotal = lines.reduce((n, l) => n + l.price * l.qty, 0);
-            const depositTotal = lines.reduce((n, l) => n + (Number(l.deposit) || 0), 0);
+            const depositTotal = lines.reduce(
+                (n, l) => n + (Number(l.deposit) || 0),
+                0
+            );
             const shipping = Number(so.shipping) || 0;
             const grandTotal = itemsTotal + depositTotal + shipping;
 
             const address = so.address || null;
+            const supplierId = so.supplierId || null;
+            const supplierName = so.supplier || 'Supplier';
+
             const subOrder = {
                 id: subId,
-                supplier: so.supplier || 'Supplier',
-                supplierId: so.supplierId || null,
+                supplier: supplierName,
+                supplierId,
                 lines,
                 addressId: so.addressId || (address && address.id) || null,
                 address: address
@@ -123,27 +132,30 @@ class CustomerOrderService {
                 grandTotal,
                 status: 'Placed',
                 placedAt,
-                timeline: [{ status: 'Placed', time: placedAt }]
+                timeline: [{ status: 'Placed', time: placedAt }],
+                hasSubscription: lines.some((l) => l.isSubscription === true)
             };
             builtSubOrders.push(subOrder);
 
             for (const line of lines) {
                 if (!line.isSubscription) continue;
-                const nextDeliveryDate = calcNextDelivery(line.frequency, so.customDays);
                 subscriptionCreates.push({
                     userId,
                     orderId: null,
-                    supplierId: so.supplierId || null,
+                    supplierId,
                     productId: line.productId || null,
                     productName: line.name,
                     frequency: line.frequency || 'Monthly',
                     quantity: line.qty,
                     price: line.price,
                     status: 'active',
-                    nextDeliveryDate,
+                    nextDeliveryDate: calcNextDelivery(
+                        line.frequency,
+                        so.customDays
+                    ),
                     details: {
                         variantName: line.name,
-                        supplier: so.supplier || 'Supplier',
+                        supplier: supplierName,
                         image: line.image || null,
                         categoryIcon: line.categoryIcon || '💧',
                         addressId: subOrder.addressId,
@@ -159,50 +171,80 @@ class CustomerOrderService {
                 });
             }
 
-            if (so.supplierId) {
-                await this.pushSupplierOrder(so.supplierId, {
-                    id: subId,
-                    parentOrderNumber,
-                    customer: customerName,
-                    customerId: userId,
-                    phone: (address && address.phone) || user.phone || '',
-                    address: address
-                        ? `${address.line}${address.landmark ? ', ' + address.landmark : ''}, ${address.city} - ${address.pincode}`
-                        : '',
-                    area: (address && address.city) || '',
-                    pincode: (address && address.pincode) || '',
-                    items: lines.map((l) => ({
-                        name: l.name,
-                        qty: l.qty,
-                        price: l.price,
-                        productId: l.productId,
-                        isSubscription: l.isSubscription,
-                        frequency: l.frequency
-                    })),
-                    total: grandTotal,
-                    itemsTotal,
-                    depositTotal,
-                    shipping,
-                    paymentMode: paymentMethod === 'Card' ? 'UPI' : (paymentMethod || 'COD'),
-                    paymentStatus: paymentMethod === 'COD' ? 'Pending' : 'Paid',
-                    isSubscription: lines.some((l) => l.isSubscription),
-                    collectEmptyCan: depositTotal > 0,
-                    canDeposit: depositTotal,
-                    slot: 'Today',
-                    priority: 'normal',
-                    status: 'Pending',
-                    deliveryPersonId: null,
-                    assignedAt: '',
-                    acceptedAt: '',
-                    startedAt: '',
-                    deliveredAt: '',
-                    createdAt: placedAt,
-                    statusHistory: [{ status: 'Pending', time: placedAt, by: 'Customer order' }]
+            if (supplierId) {
+                supplierPushes.push({
+                    supplierId,
+                    orderObj: {
+                        id: subId,
+                        parentOrderNumber,
+                        customerOrderId: null,
+                        customer: customerName,
+                        customerId: userId,
+                        phone: (address && address.phone) || user.phone || '',
+                        address: address
+                            ? `${address.line}${
+                                  address.landmark
+                                      ? ', ' + address.landmark
+                                      : ''
+                              }, ${address.city} - ${address.pincode}`
+                            : '',
+                        area: (address && address.city) || '',
+                        pincode: (address && address.pincode) || '',
+                        items: lines.map((l) => ({
+                            name: l.name,
+                            qty: l.qty,
+                            price: l.price,
+                            productId: l.productId,
+                            isSubscription: l.isSubscription === true,
+                            frequency: l.frequency || null,
+                            image: l.image || null,
+                            sku: l.sku || null
+                        })),
+                        total: grandTotal,
+                        itemsTotal,
+                        depositTotal,
+                        shipping,
+                        paymentMode:
+                            paymentMethod === 'Card'
+                                ? 'UPI'
+                                : paymentMethod || 'COD',
+                        paymentStatus:
+                            paymentMethod === 'COD' ? 'Pending' : 'Paid',
+                        isSubscription: lines.some(
+                            (l) => l.isSubscription === true
+                        ),
+                        collectEmptyCan: depositTotal > 0,
+                        canDeposit: depositTotal,
+                        slot: 'Today',
+                        priority: 'normal',
+                        status: 'Pending',
+                        deliveryPersonId: null,
+                        assignedAt: '',
+                        acceptedAt: '',
+                        startedAt: '',
+                        deliveredAt: '',
+                        createdAt: placedAt,
+                        statusHistory: [
+                            {
+                                status: 'Pending',
+                                time: placedAt,
+                                by: 'Customer order'
+                            }
+                        ]
+                    }
                 });
+            } else {
+                console.error(
+                    '[createOrder] Missing supplierId — supplier order NOT created. supplier=',
+                    supplierName
+                );
             }
         }
 
-        const totalAmount = builtSubOrders.reduce((n, s) => n + Number(s.grandTotal || 0), 0);
+        const totalAmount = builtSubOrders.reduce(
+            (n, s) => n + Number(s.grandTotal || 0),
+            0
+        );
 
         const parent = await CustomerOrder.create({
             userId,
@@ -215,7 +257,30 @@ class CustomerOrderService {
 
         for (const sub of subscriptionCreates) {
             sub.orderId = parent.id;
-            await Subscription.create(sub);
+            try {
+                await Subscription.create(sub);
+            } catch (subErr) {
+                console.error('Subscription create failed:', subErr.message);
+            }
+        }
+
+        for (const { supplierId, orderObj } of supplierPushes) {
+            orderObj.customerOrderId = parent.id;
+            try {
+                await this.pushSupplierOrder(supplierId, orderObj);
+                console.log(
+                    '[createOrder] Supplier order pushed for',
+                    supplierId,
+                    'order',
+                    orderObj.id
+                );
+            } catch (supErr) {
+                console.error(
+                    '[createOrder] Supplier order push FAILED for',
+                    supplierId,
+                    supErr.message
+                );
+            }
         }
 
         return {
@@ -230,7 +295,14 @@ class CustomerOrderService {
     }
 
     async pushSupplierOrder(supplierUserId, orderObj) {
-        let row = await SupplierOrder.findOne({ where: { userId: supplierUserId } });
+        if (!supplierUserId) {
+            throw new Error('supplierUserId is required');
+        }
+
+        let row = await SupplierOrder.findOne({
+            where: { userId: supplierUserId }
+        });
+
         if (!row) {
             row = await SupplierOrder.create({
                 userId: supplierUserId,
@@ -238,8 +310,10 @@ class CustomerOrderService {
             });
             return row;
         }
-        const existing = Array.isArray(row.orders) ? row.orders : [];
-        row.orders = [orderObj, ...existing];
+
+        const existing = Array.isArray(row.orders) ? [...row.orders] : [];
+        const next = [orderObj, ...existing];
+        row.set('orders', next);
         row.changed('orders', true);
         await row.save();
         return row;

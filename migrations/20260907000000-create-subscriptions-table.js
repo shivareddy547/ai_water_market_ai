@@ -18,52 +18,77 @@ module.exports = {
         onUpdate: 'CASCADE',
         onDelete: 'CASCADE'
       },
-      status: {
+      order_id: {
+        type: Sequelize.UUID,
+        allowNull: true,
+        references: {
+          model: 'customer_orders',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      supplier_id: {
+        type: Sequelize.UUID,
+        allowNull: true,
+        references: {
+          model: 'users',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      product_id: {
+        type: Sequelize.UUID,
+        allowNull: true,
+        references: {
+          model: 'products',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      product_name: {
         type: Sequelize.STRING,
-        allowNull: false,
-        defaultValue: 'active'
+        allowNull: true
       },
       frequency: {
         type: Sequelize.STRING,
         allowNull: false
       },
-      custom_days: {
-        type: Sequelize.INTEGER,
-        allowNull: false,
-        defaultValue: 0
-      },
-      qty: {
+      quantity: {
         type: Sequelize.INTEGER,
         allowNull: false,
         defaultValue: 1
       },
-      time_slot: {
+      price: {
+        type: Sequelize.DECIMAL(12, 2),
+        allowNull: false
+      },
+      status: {
         type: Sequelize.STRING,
+        allowNull: false,
+        defaultValue: 'Active'
+      },
+      next_delivery_date: {
+        type: Sequelize.DATE,
         allowNull: true
       },
-      address_id: {
-        type: Sequelize.UUID,
+      created_at: {
+        type: Sequelize.DATE,
         allowNull: false,
-        references: {
-          model: 'customer_addresses',
-          key: 'id'
-        },
-        onUpdate: 'CASCADE',
-        onDelete: 'RESTRICT'
+        defaultValue: Sequelize.NOW
       },
-      payment_method: {
-        type: Sequelize.STRING,
-        allowNull: false
+      updated_at: {
+        type: Sequelize.DATE,
+        allowNull: false,
+        defaultValue: Sequelize.NOW
       },
       variant_name: {
         type: Sequelize.STRING,
-        allowNull: false
+        allowNull: true
       },
       supplier: {
-        type: Sequelize.STRING,
-        allowNull: false
-      },
-      image: {
         type: Sequelize.STRING,
         allowNull: true
       },
@@ -71,22 +96,30 @@ module.exports = {
         type: Sequelize.STRING,
         allowNull: true
       },
-      price: {
-        type: Sequelize.DECIMAL(10, 2),
-        allowNull: false
+      image: {
+        type: Sequelize.STRING,
+        allowNull: true
+      },
+      time_slot: {
+        type: Sequelize.STRING,
+        allowNull: true
+      },
+      address_id: {
+        type: Sequelize.UUID,
+        allowNull: true
+      },
+      payment_method: {
+        type: Sequelize.STRING,
+        allowNull: true
       },
       deposit_per_delivery: {
-        type: Sequelize.DECIMAL(10, 2),
-        allowNull: false,
+        type: Sequelize.DECIMAL(12, 2),
+        allowNull: true,
         defaultValue: 0
-      },
-      next_delivery_on: {
-        type: Sequelize.DATEONLY,
-        allowNull: false
       },
       started_on: {
         type: Sequelize.DATEONLY,
-        allowNull: false
+        allowNull: true
       },
       deliveries_done: {
         type: Sequelize.INTEGER,
@@ -97,14 +130,6 @@ module.exports = {
         type: Sequelize.JSONB,
         allowNull: true,
         defaultValue: []
-      },
-      created_at: {
-        type: Sequelize.DATE,
-        allowNull: false
-      },
-      updated_at: {
-        type: Sequelize.DATE,
-        allowNull: false
       }
     });
   },

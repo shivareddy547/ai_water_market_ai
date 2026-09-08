@@ -18,13 +18,12 @@ module.exports = {
             },
             email: {
                 type: Sequelize.STRING(255),
-                allowNull: true,
-                unique: true
+                allowNull: true
+                // Removed unique: true to prevent duplicate index conflicts with the partial index below
             },
             phone: {
                 type: Sequelize.STRING(20),
-                allowNull: true,
-                unique: true
+                allowNull: true
             },
             phone_country_code: {
                 type: Sequelize.STRING(10),
@@ -70,6 +69,7 @@ module.exports = {
                 defaultValue: Sequelize.NOW
             }
         });
+        // Schema defines partial unique indexes for email and phone
         await queryInterface.addIndex('users', ['email'], {
             name: 'users_email_idx',
             unique: true,

@@ -40,13 +40,9 @@ module.exports = {
       },
       order_id: {
         type: Sequelize.UUID,
-        allowNull: true,
-        references: {
-          model: 'customer_orders',
-          key: 'id'
-        },
-        onUpdate: 'CASCADE',
-        onDelete: 'CASCADE'
+        allowNull: true
+        // Removed FK reference here to fix "relation customer_orders does not exist" error
+        // The FK constraint is added in a later migration after customer_orders is created
       },
       rating: {
         type: Sequelize.INTEGER,
@@ -67,11 +63,13 @@ module.exports = {
       },
       created_at: {
         type: Sequelize.DATE,
-        allowNull: false
+        allowNull: false,
+        defaultValue: Sequelize.NOW
       },
       updated_at: {
         type: Sequelize.DATE,
-        allowNull: false
+        allowNull: false,
+        defaultValue: Sequelize.NOW
       }
     });
     // Add rating and review_count columns to products table

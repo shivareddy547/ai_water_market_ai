@@ -18,6 +18,11 @@ module.exports = (sequelize) => {
             allowNull: false,
             unique: true
         },
+        permalink: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            unique: true
+        },
         icon: {
             type: DataTypes.STRING,
             allowNull: true,

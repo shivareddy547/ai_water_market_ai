@@ -11,13 +11,12 @@ class SettingController {
     }
     async updateSetting(req, res, next) {
         try {
-            const { value } = req.body;
-            if (!value) {
-                const err = new Error('Value is required');
-                err.status = 400;
+            if (req.user.role !== 'admin') {
+                const err = new Error('Not authorized');
+                err.status = 403;
                 throw err;
             }
-            const setting = await settingService.updateSetting(req.params.key, value);
+            const setting = await settingService.updateSetting(req.params.key, req.body.value);
             res.json({ success: true, data: setting, message: 'Setting updated successfully' });
         } catch (err) {
             next(err);

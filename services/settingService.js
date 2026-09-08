@@ -2,17 +2,31 @@
 const { Setting } = require('../models');
 class SettingService {
     async getSetting(key) {
+        if (!key) {
+            const err = new Error('Setting key is required');
+            err.status = 400;
+            throw err;
+        }
         const setting = await Setting.findOne({ where: { key } });
-        return setting || { key, value: {} };
+        if (!setting) {
+            return { value: {} };
+        }
+        return setting;
     }
     async updateSetting(key, value) {
-        const setting = await Setting.findOne({ where: { key } });
-        if (setting) {
-            setting.value = value;
-            await setting.save();
-            return setting;
+        if (!key) {
+            const err = new Error('Setting key is required');
+            err.status = 400;
+            throw err;
         }
-        return await Setting.create({ key, value });
+        let setting = await Setting.findOne({ where: { key } });
+        if (!setting) {
+            setting = await Setting.create({ key, value: value || {} });
+        } else {
+            setting.value = value || {};
+            await setting.save();
+        }
+        return setting;
     }
 }
 module.exports = new SettingService();

@@ -1,6 +1,5 @@
 'use strict';
 const { Model, DataTypes } = require('sequelize');
-
 module.exports = (sequelize) => {
     class Subscription extends Model {
         static associate(models) {
@@ -18,7 +17,6 @@ module.exports = (sequelize) => {
             });
         }
     }
-    
     Subscription.init({
         id: {
             type: DataTypes.UUID,
@@ -48,7 +46,8 @@ module.exports = (sequelize) => {
         },
         productName: {
             type: DataTypes.STRING,
-            allowNull: true
+            allowNull: true,
+            field: 'product_name'
         },
         frequency: {
             type: DataTypes.STRING,
@@ -66,12 +65,17 @@ module.exports = (sequelize) => {
         status: {
             type: DataTypes.STRING,
             allowNull: false,
-            defaultValue: 'Active'
+            defaultValue: 'active'
         },
         nextDeliveryDate: {
             type: DataTypes.DATE,
             allowNull: true,
             field: 'next_delivery_date'
+        },
+        details: {
+            type: DataTypes.JSONB,
+            allowNull: true,
+            defaultValue: {}
         }
     }, {
         sequelize,

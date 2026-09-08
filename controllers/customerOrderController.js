@@ -1,25 +1,10 @@
 'use strict';
 const customerOrderService = require('../services/customerOrderService');
+
 class CustomerOrderController {
-    async getAll(req, res, next) {
+    async create(req, res, next) {
         try {
-            const orders = await customerOrderService.getByUser(req.user.id);
-            res.json({ success: true, data: orders });
-        } catch (err) {
-            next(err);
-        }
-    }
-    async getById(req, res, next) {
-        try {
-            const order = await customerOrderService.getById(req.params.id, req.user.id);
-            res.json({ success: true, data: order });
-        } catch (err) {
-            next(err);
-        }
-    }
-    async placeOrder(req, res, next) {
-        try {
-            const order = await customerOrderService.placeOrder(req.user.id, req.body);
+            const order = await customerOrderService.createOrder(req.user.id, req.body);
             res.status(201).json({
                 success: true,
                 data: order,
@@ -29,5 +14,24 @@ class CustomerOrderController {
             next(err);
         }
     }
+
+    async getMyOrders(req, res, next) {
+        try {
+            const orders = await customerOrderService.getOrdersByUser(req.user.id);
+            res.json({ success: true, data: orders });
+        } catch (err) {
+            next(err);
+        }
+    }
+
+    async getById(req, res, next) {
+        try {
+            const order = await customerOrderService.getOrderById(req.params.id, req.user.id);
+            res.json({ success: true, data: order });
+        } catch (err) {
+            next(err);
+        }
+    }
 }
+
 module.exports = new CustomerOrderController();

@@ -1,37 +1,54 @@
 'use strict';
 const supplierOrderService = require('../services/supplierOrderService');
+
 class SupplierOrderController {
-    async getAll(req, res, next) {
+    async getOrders(req, res, next) {
         try {
-            const orders = await supplierOrderService.getOrdersByUser(req.user.id, req.user.role);
+            const orders = await supplierOrderService.getOrders(req.user.id);
             res.json({ success: true, data: orders });
         } catch (err) {
             next(err);
         }
     }
+
     async updateStatus(req, res, next) {
         try {
-            const { orderId } = req.params;
-            const { status } = req.body;
+            const { status, ...extra } = req.body;
             if (!status) {
                 const err = new Error('Status is required');
                 err.status = 400;
                 throw err;
             }
-            const updatedOrder = await supplierOrderService.updateOrderStatus(orderId, req.user, status);
-            res.json({ success: true, data: updatedOrder, message: 'Order status updated successfully' });
+            const order = await supplierOrderService.updateOrderStatus(
+                req.user.id,
+                req.params.id,
+                status,
+                extra
+            );
+            res.json({ success: true, data: order, message: 'Order status updated' });
         } catch (err) {
             next(err);
         }
     }
-    async updateOrders(req, res, next) {
+
+    async assign(req, res, next) {
         try {
-            const { orders } = req.body;
-            const updatedOrders = await supplierOrderService.updateOrders(req.user.id, orders);
-            res.json({ success: true, data: updatedOrders, message: 'Orders updated successfully' });
+            const { deliveryPersonId } = req.body;
+            if (!deliveryPersonId) {
+                const err = new Error('deliveryPersonId is required');
+                err.status = 400;
+                throw err;
+            }
+            const order = await supplierOrderService.assignDeliveryPerson(
+                req.user.id,
+                req.params.id,
+                deliveryPersonId
+            );
+            res.json({ success: true, data: order, message: 'Delivery person assigned' });
         } catch (err) {
             next(err);
         }
     }
 }
+
 module.exports = new SupplierOrderController();

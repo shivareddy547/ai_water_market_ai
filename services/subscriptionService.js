@@ -31,29 +31,72 @@ function mapSubscription(row) {
             ? statusRaw
             : 'active';
 
+    const variantName =
+        j.variantName ||
+        j.variant_name ||
+        details.variantName ||
+        j.productName ||
+        j.product_name ||
+        '';
+    const supplier = j.supplier || details.supplier || '';
+    const image = j.image || details.image || null;
+    const categoryIcon =
+        j.categoryIcon || j.category_icon || details.categoryIcon || '💧';
+    const timeSlot = j.timeSlot || j.time_slot || details.timeSlot || '';
+    const addressId = j.addressId || j.address_id || details.addressId || '';
+    const paymentMethod =
+        j.paymentMethod || j.payment_method || details.paymentMethod || 'COD';
+    const depositPerDelivery = Number(
+        j.depositPerDelivery != null
+            ? j.depositPerDelivery
+            : j.deposit_per_delivery != null
+            ? j.deposit_per_delivery
+            : details.depositPerDelivery || 0
+    );
+    const deliveriesDone = Number(
+        j.deliveriesDone != null
+            ? j.deliveriesDone
+            : j.deliveries_done != null
+            ? j.deliveries_done
+            : details.deliveriesDone || 0
+    );
+    const startedOn =
+        toIsoDate(j.startedOn || j.started_on) ||
+        details.startedOn ||
+        toIsoDate(j.createdAt) ||
+        toIsoDate(new Date());
+    const history = Array.isArray(j.history)
+        ? j.history
+        : Array.isArray(details.history)
+        ? details.history
+        : [];
+
     return {
         id: j.id,
-        orderId: j.orderId || null,
-        supplierId: j.supplierId || null,
-        productId: j.productId || null,
-        productName: j.productName || details.variantName || '',
-        variantName: details.variantName || j.productName || '',
-        supplier: details.supplier || '',
-        image: details.image || null,
-        categoryIcon: details.categoryIcon || '💧',
+        orderId: j.orderId || j.order_id || null,
+        supplierId: j.supplierId || j.supplier_id || null,
+        productId: j.productId || j.product_id || null,
+        productName: j.productName || j.product_name || variantName || '',
+        variantName,
+        supplier,
+        image,
+        categoryIcon,
         frequency: j.frequency,
-        customDays: details.customDays || 0,
-        qty: j.quantity,
+        customDays: Number(details.customDays) || 0,
+        qty: Number(j.quantity) || 1,
         price: Number(j.price) || 0,
         status,
-        nextDeliveryOn: toIsoDate(j.nextDeliveryDate) || details.startedOn || toIsoDate(new Date()),
-        startedOn: details.startedOn || toIsoDate(j.createdAt) || toIsoDate(new Date()),
-        addressId: details.addressId || '',
-        paymentMethod: details.paymentMethod || 'COD',
-        timeSlot: details.timeSlot || '',
-        depositPerDelivery: Number(details.depositPerDelivery) || 0,
-        deliveriesDone: Number(details.deliveriesDone) || 0,
-        history: Array.isArray(details.history) ? details.history : [],
+        nextDeliveryOn:
+            toIsoDate(j.nextDeliveryDate || j.next_delivery_date) ||
+            startedOn ||
+            toIsoDate(new Date()),
+        startedOn,
+        addressId: addressId ? String(addressId) : '',
+        paymentMethod,
+        timeSlot,
+        depositPerDelivery,
+        deliveriesDone,
+        history,
         createdAt: j.createdAt,
         updatedAt: j.updatedAt
     };
@@ -89,13 +132,14 @@ class SubscriptionService {
 
         const nextDeliveryDate = calcNextDelivery(frequency, customDays);
         const startedOn = new Date().toISOString().split('T')[0];
+        const name = productName || variantName || null;
 
         const subscription = await Subscription.create({
             userId,
             orderId: orderId || null,
             supplierId: supplierId || null,
             productId: productId || null,
-            productName: productName || variantName || null,
+            productName: name,
             frequency,
             quantity: quantity || 1,
             price: price != null ? price : 0,
@@ -154,10 +198,12 @@ class SubscriptionService {
         if (patch.qty !== undefined) subscription.quantity = patch.qty;
         if (patch.quantity !== undefined) subscription.quantity = patch.quantity;
         if (patch.price !== undefined) subscription.price = patch.price;
-        if (patch.customDays !== undefined) details.customDays = Number(patch.customDays) || 0;
+        if (patch.customDays !== undefined)
+            details.customDays = Number(patch.customDays) || 0;
         if (patch.timeSlot !== undefined) details.timeSlot = patch.timeSlot;
         if (patch.addressId !== undefined) details.addressId = patch.addressId;
-        if (patch.paymentMethod !== undefined) details.paymentMethod = patch.paymentMethod;
+        if (patch.paymentMethod !== undefined)
+            details.paymentMethod = patch.paymentMethod;
 
         subscription.details = details;
         subscription.changed('details', true);

@@ -19,7 +19,11 @@ class ReviewController {
     }
     async getAllReviews(req, res, next) {
         try {
-            const reviews = await reviewService.getAllReviews(req.query);
+            const filter = { ...req.query };
+            if (req.user.role === 'supplier') {
+                filter.supplierId = req.user.id;
+            }
+            const reviews = await reviewService.getAllReviews(filter);
             res.json({ success: true, data: reviews });
         } catch (err) {
             next(err);

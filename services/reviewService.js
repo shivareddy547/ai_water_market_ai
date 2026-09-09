@@ -8,10 +8,17 @@ class ReviewService {
             err.status = 400;
             throw err;
         }
+        let finalSupplierId = supplierId;
+        if (!finalSupplierId && productId) {
+            const product = await Product.findByPk(productId);
+            if (product) {
+                finalSupplierId = product.userId;
+            }
+        }
         const review = await Review.create({
             userId,
             productId: productId || null,
-            supplierId: supplierId || null,
+            supplierId: finalSupplierId || null,
             orderId: orderId || null,
             rating,
             title: title || null,
@@ -36,11 +43,14 @@ class ReviewService {
         if (filter.status && filter.status !== '') {
             where.status = filter.status;
         }
+        if (filter.supplierId) {
+            where.supplierId = filter.supplierId;
+        }
         return await Review.findAll({
             where,
             include: [
                 { model: require('../models').User, as: 'user', attributes: ['id', 'first_name', 'last_name'] },
-                { model: Product, as: 'product', attributes: ['id', 'name'] }
+                { model: Product, as: 'product', attributes: ['id', 'name', 'images'] }
             ],
             order: [['created_at', 'DESC']]
         });
@@ -55,7 +65,6 @@ class ReviewService {
         const oldStatus = review.status;
         review.status = status;
         await review.save();
-        // If review is for a product, recalculate product rating
         if (review.productId && (status === 'published' || oldStatus === 'published')) {
             const reviews = await Review.findAll({ 
                 where: { productId: review.productId, status: 'published' } 
@@ -81,7 +90,6 @@ class ReviewService {
         const productId = review.productId;
         const oldStatus = review.status;
         await review.destroy();
-        // Recalculate product rating if necessary
         if (productId && oldStatus === 'published') {
             const reviews = await Review.findAll({ 
                 where: { productId, status: 'published' } 

@@ -75,5 +75,58 @@ class SupplierOrderService {
         );
         return assignedOrders;
     }
+    async updateOrderStatus(userId, orderId, newStatus) {
+        const user = await User.findByPk(userId);
+        if (!user) {
+            const err = new Error('User not found');
+            err.status = 404;
+            throw err;
+        }
+        let supplierUserId = userId;
+        if (user.role === 'delivery') {
+            if (!user.supplierId) {
+                const err = new Error('Not assigned to a supplier');
+                err.status = 403;
+                throw err;
+            }
+            supplierUserId = user.supplierId;
+        } else if (user.role !== 'supplier') {
+            const err = new Error('Unauthorized');
+            err.status = 403;
+            throw err;
+        }
+        const supplierOrder = await SupplierOrder.findOne({ where: { userId: supplierUserId } });
+        if (!supplierOrder || !supplierOrder.orders) {
+            const err = new Error('Orders not found');
+            err.status = 404;
+            throw err;
+        }
+        const orders = supplierOrder.orders;
+        const index = orders.findIndex(o => o.id === orderId);
+        if (index === -1) {
+            const err = new Error('Order not found');
+            err.status = 404;
+            throw err;
+        }
+        orders[index].status = newStatus;
+        if (!orders[index].statusHistory) {
+            orders[index].statusHistory = [];
+        }
+        orders[index].statusHistory.push({ 
+            status: newStatus, 
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
+            by: user.role === 'delivery' ? `${user.firstName} ${user.lastName}` : 'Supplier' 
+        });
+        if (newStatus === 'Delivered') {
+            orders[index].deliveredAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (orders[index].paymentMode === 'COD') {
+                orders[index].paymentStatus = 'Paid';
+            }
+        }
+        supplierOrder.orders = orders;
+        supplierOrder.changed('orders', true);
+        await supplierOrder.save();
+        return orders[index];
+    }
 }
 module.exports = new SupplierOrderService();

@@ -26,5 +26,20 @@ class SupplierOrderController {
             next(err);
         }
     }
+    async updateOrderStatus(req, res, next) {
+        try {
+            const { orderId } = req.params;
+            const { status } = req.body;
+            if (!orderId || !status) {
+                const err = new Error('Order ID and status are required');
+                err.status = 400;
+                throw err;
+            }
+            const updatedOrder = await supplierOrderService.updateOrderStatus(req.user.id, orderId, status);
+            res.json({ success: true, data: updatedOrder, message: 'Order status updated successfully' });
+        } catch (err) {
+            next(err);
+        }
+    }
 }
 module.exports = new SupplierOrderController();

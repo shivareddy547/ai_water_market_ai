@@ -1,5 +1,5 @@
 'use strict';
-const { Review, Product } = require('../models');
+const { Review, Product, Setting } = require('../models');
 class ReviewService {
     async createReview(userId, data) {
         const { productId, supplierId, orderId, rating, title, comment } = data;
@@ -15,6 +15,9 @@ class ReviewService {
                 finalSupplierId = product.userId;
             }
         }
+        const autoApproveSetting = await Setting.findOne({ where: { key: 'reviews_auto_approve' } });
+        const isAutoApprove = autoApproveSetting && autoApproveSetting.value && autoApproveSetting.value.enabled === true;
+        const status = isAutoApprove ? 'published' : 'pending';
         const review = await Review.create({
             userId,
             productId: productId || null,
@@ -23,9 +26,39 @@ class ReviewService {
             rating,
             title: title || null,
             comment,
-            status: 'pending'
+            status
         });
+        if (status === 'published' && review.productId) {
+            const reviews = await Review.findAll({ 
+                where: { productId: review.productId, status: 'published' } 
+            });
+            const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
+            const avgRating = reviews.length > 0 ? totalRating / reviews.length : 0;
+            await Product.update({ 
+                rating: parseFloat(avgRating.toFixed(1)), 
+                reviewCount: reviews.length 
+            }, { 
+                where: { id: review.productId } 
+            });
+        }
         return review;
+    }
+    async getAutoApproveSetting() {
+        let setting = await Setting.findOne({ where: { key: 'reviews_auto_approve' } });
+        if (!setting) {
+            setting = await Setting.create({ key: 'reviews_auto_approve', value: { enabled: false } });
+        }
+        return setting;
+    }
+    async updateAutoApproveSetting(enabled) {
+        let setting = await Setting.findOne({ where: { key: 'reviews_auto_approve' } });
+        if (!setting) {
+            setting = await Setting.create({ key: 'reviews_auto_approve', value: { enabled: enabled } });
+        } else {
+            setting.value = { enabled: enabled };
+            await setting.save();
+        }
+        return setting;
     }
     async getReviewsByProductId(productId) {
         return await Review.findAll({

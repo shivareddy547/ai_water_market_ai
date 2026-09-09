@@ -3,6 +3,9 @@ const express = require('express');
 const router = express.Router();
 const reviewController = require('../controllers/reviewController');
 const authMiddleware = require('../middleware/authMiddleware');
+// Settings routes
+router.get('/settings/auto-approve', authMiddleware, reviewController.getAutoApproveSetting);
+router.put('/settings/auto-approve', authMiddleware, reviewController.updateAutoApproveSetting);
 // Public route to get published reviews for a product
 router.get('/product/:productId', reviewController.getProductReviews);
 // Authenticated routes

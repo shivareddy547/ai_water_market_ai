@@ -3,9 +3,7 @@ const express = require('express');
 const router = express.Router();
 const supplierOrderController = require('../controllers/supplierOrderController');
 const authMiddleware = require('../middleware/authMiddleware');
-
+router.get('/assigned', authMiddleware, supplierOrderController.getAssignedOrders);
 router.get('/', authMiddleware, supplierOrderController.getOrders);
-router.put('/:id/status', authMiddleware, supplierOrderController.updateStatus);
-router.post('/:id/assign', authMiddleware, supplierOrderController.assign);
-
+router.put('/', authMiddleware, supplierOrderController.updateOrders);
 module.exports = router;

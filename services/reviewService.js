@@ -88,6 +88,17 @@ class ReviewService {
             order: [['created_at', 'DESC']]
         });
     }
+    async getTestimonials() {
+        return await Review.findAll({
+            where: { status: 'published' },
+            include: [
+                { model: require('../models').User, as: 'user', attributes: ['id', 'first_name', 'last_name'] },
+                { model: Product, as: 'product', attributes: ['id', 'name'] }
+            ],
+            order: [['created_at', 'DESC']],
+            limit: 5
+        });
+    }
     async updateReviewStatus(id, status) {
         const review = await Review.findByPk(id);
         if (!review) {

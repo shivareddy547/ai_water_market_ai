@@ -8,6 +8,8 @@ router.get('/settings/auto-approve', authMiddleware, reviewController.getAutoApp
 router.put('/settings/auto-approve', authMiddleware, reviewController.updateAutoApproveSetting);
 // Public route to get published reviews for a product
 router.get('/product/:productId', reviewController.getProductReviews);
+// Public route to get recent testimonials
+router.get('/testimonials', reviewController.getTestimonials);
 // Authenticated routes
 router.post('/', authMiddleware, reviewController.createReview);
 // Admin routes (authMiddleware protects these, assuming admin role is checked or handled in UI)

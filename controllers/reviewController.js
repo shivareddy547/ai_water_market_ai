@@ -63,5 +63,13 @@ class ReviewController {
             next(err);
         }
     }
+    async getTestimonials(req, res, next) {
+        try {
+            const reviews = await reviewService.getTestimonials();
+            res.json({ success: true, data: reviews });
+        } catch (err) {
+            next(err);
+        }
+    }
 }
 module.exports = new ReviewController();

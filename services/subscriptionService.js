@@ -1,6 +1,6 @@
 'use strict';
 const { Op } = require('sequelize');
-const { Subscription, User } = require('../models');
+const { Subscription, User, CustomerOrder, SupplierOrder } = require('../models');
 function calcNextDelivery(frequency, customDays) {
     const d = new Date();
     const f = (frequency || '').toLowerCase();
@@ -333,11 +333,101 @@ class SubscriptionService {
         return mapSubscription(subscription);
     }
     async deliverNow(id, userId) {
-        const subscription = await Subscription.findOne({ where: { id, userId } });
+        const subscription = await Subscription.findOne({
+            where: { id, userId },
+            include: [{ model: User, as: 'user' }]
+        });
         if (!subscription) {
             const err = new Error('Subscription not found');
             err.status = 404;
             throw err;
+        }
+        let sourceOrder = null;
+        if (subscription.orderId) {
+            sourceOrder = await CustomerOrder.findByPk(subscription.orderId);
+        }
+        if (!sourceOrder) {
+            sourceOrder = await CustomerOrder.findOne({
+                where: { userId: subscription.userId },
+                order: [['created_at', 'DESC']]
+            });
+        }
+        if (!sourceOrder) {
+            const err = new Error('No source order found for subscription to create delivery');
+            err.status = 404;
+            throw err;
+        }
+        const sourceSubs = sourceOrder.subOrders || [];
+        if (sourceSubs.length === 0) {
+            const err = new Error('Source order has no sub-orders to create delivery');
+            err.status = 404;
+            throw err;
+        }
+        const newSubOrders = sourceSubs.map(s => ({
+            ...s,
+            id: `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
+            status: 'Placed',
+            placedAt: new Date().toISOString(),
+            timeline: [{ status: 'Placed', time: new Date().toISOString(), by: 'Manual Delivery' }]
+        }));
+        const totalAmount = newSubOrders.reduce((sum, s) => sum + Number(s.grandTotal || 0), 0);
+        const orderCount = await CustomerOrder.count();
+        const orderNumber = `SUB-${Date.now()}-${orderCount + 1}`;
+        const newOrder = await CustomerOrder.create({
+            userId: subscription.userId,
+            orderNumber,
+            subOrders: newSubOrders,
+            totalAmount,
+            paymentMethod: sourceOrder.paymentMethod,
+            status: 'Placed'
+        });
+        const user = subscription.user;
+        const userFirst = user ? (user.firstName || user.first_name || '') : '';
+        const userLast = user ? (user.lastName || user.last_name || '') : '';
+        const customerName = `${userFirst} ${userLast}`.trim() || 'Customer';
+        for (const subOrder of newSubOrders) {
+            const supplierId = subOrder.supplierId || subscription.supplierId;
+            if (!supplierId) continue;
+            const supplierEntry = {
+                id: subOrder.id,
+                customer: customerName,
+                phone: subOrder.address?.phone || '',
+                address: subOrder.address
+                    ? `${subOrder.address.line || ''}${subOrder.address.landmark ? ', ' + subOrder.address.landmark : ''}, ${subOrder.address.city || ''} - ${subOrder.address.pincode || ''}`
+                    : '',
+                area: subOrder.address?.city || '',
+                items: (subOrder.lines || []).map(l => ({ name: l.name, qty: l.qty, price: l.price })),
+                total: subOrder.grandTotal || 0,
+                paymentMode: subOrder.paymentMethod || sourceOrder.paymentMethod,
+                paymentStatus: (subOrder.paymentMethod || sourceOrder.paymentMethod) === 'COD' ? 'Pending' : 'Paid',
+                isSubscription: true,
+                subscriptionId: subscription.id,
+                collectEmptyCan: Number(subOrder.depositTotal || 0) > 0,
+                canDeposit: subOrder.depositTotal || 0,
+                slot: 'Today',
+                priority: 'normal',
+                status: 'Pending',
+                deliveryPersonId: null,
+                assignedAt: '',
+                acceptedAt: '',
+                startedAt: '',
+                deliveredAt: '',
+                createdAt: new Date().toISOString(),
+                statusHistory: [{ status: 'Pending', time: new Date().toISOString(), by: 'Manual Delivery' }]
+            };
+            let supplierOrder = await SupplierOrder.findOne({ where: { userId: supplierId } });
+            if (supplierOrder) {
+                const orders = supplierOrder.orders || [];
+                orders.unshift(supplierEntry);
+                supplierOrder.orders = orders;
+                supplierOrder.changed('orders', true);
+                await supplierOrder.save();
+            } else {
+                await SupplierOrder.create({
+                    userId: supplierId,
+                    orders: [supplierEntry]
+                });
+            }
         }
         const details = { ...(subscription.details || {}) };
         details.deliveriesDone = (Number(details.deliveriesDone) || 0) + 1;
@@ -346,7 +436,8 @@ class SubscriptionService {
                 date: toIsoDate(new Date()),
                 qty: subscription.quantity,
                 amount: Number(subscription.price) * Number(subscription.quantity),
-                status: 'Delivered'
+                status: 'Order Created',
+                orderId: newOrder.id
             },
             ...(Array.isArray(details.history) ? details.history : [])
         ];

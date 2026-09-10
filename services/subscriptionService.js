@@ -1,6 +1,6 @@
 'use strict';
 const { Op } = require('sequelize');
-const { Subscription, User, CustomerOrder, SupplierOrder } = require('../models');
+const { Subscription, User, CustomerOrder, SupplierOrder, Notification } = require('../models');
 function calcNextDelivery(frequency, customDays) {
     const d = new Date();
     const f = (frequency || '').toLowerCase();
@@ -385,6 +385,7 @@ class SubscriptionService {
         const userFirst = user ? (user.firstName || user.first_name || '') : '';
         const userLast = user ? (user.lastName || user.last_name || '') : '';
         const customerName = `${userFirst} ${userLast}`.trim() || 'Customer';
+        const notifiedSuppliers = new Set();
         for (const subOrder of newSubOrders) {
             const supplierId = subOrder.supplierId || subscription.supplierId;
             if (!supplierId) continue;
@@ -428,7 +429,27 @@ class SubscriptionService {
                     orders: [supplierEntry]
                 });
             }
+            if (!notifiedSuppliers.has(supplierId)) {
+                notifiedSuppliers.add(supplierId);
+                await Notification.create({
+                    userId: supplierId,
+                    type: 'subscription_order',
+                    title: 'New Subscription Order',
+                    message: `A new order #${orderNumber} has been generated from a subscription by ${customerName}.`,
+                    link: '/supplier/orders',
+                    isRead: false
+                });
+            }
         }
+        // Self notification to customer
+        await Notification.create({
+            userId: subscription.userId,
+            type: 'subscription_delivery',
+            title: 'Subscription Delivery Scheduled',
+            message: `Your subscription order #${orderNumber} has been processed and will be delivered according to the supplier's availability.`,
+            link: '/customer/orders',
+            isRead: false
+        });
         const details = { ...(subscription.details || {}) };
         details.deliveriesDone = (Number(details.deliveriesDone) || 0) + 1;
         details.history = [

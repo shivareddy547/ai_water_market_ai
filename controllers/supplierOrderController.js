@@ -1,5 +1,5 @@
 'use strict';
-const { SupplierOrder, CustomerOrder } = require('../models');
+const { SupplierOrder, CustomerOrder, DeliveryTeam } = require('../models');
 class SupplierOrderController {
     async getOrders(req, res, next) {
         try {
@@ -33,11 +33,22 @@ class SupplierOrderController {
             if (!supplierId) {
                 return res.json({ success: true, data: [] });
             }
+            // Find the delivery person's team ID (dp_...) from DeliveryTeam data
+            const teamRecord = await DeliveryTeam.findOne({ where: { userId: supplierId } });
+            if (!teamRecord || !teamRecord.data || !teamRecord.data.persons) {
+                return res.json({ success: true, data: [] });
+            }
+            const deliveryPerson = teamRecord.data.persons.find(p => p.userId === req.user.id);
+            if (!deliveryPerson) {
+                return res.json({ success: true, data: [] });
+            }
+            const dpId = deliveryPerson.id;
             const orderRecord = await SupplierOrder.findOne({ where: { userId: supplierId } });
             if (!orderRecord) {
                 return res.json({ success: true, data: [] });
             }
-            const assignedOrders = orderRecord.orders.filter(o => o.deliveryPersonId === req.user.id);
+            // Filter orders by the matched dpId
+            const assignedOrders = orderRecord.orders.filter(o => o.deliveryPersonId === dpId);
             res.json({ success: true, data: assignedOrders });
         } catch (err) {
             next(err);

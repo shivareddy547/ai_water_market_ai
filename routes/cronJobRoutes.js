@@ -1,0 +1,10 @@
+'use strict';
+const express = require('express');
+const router = express.Router();
+const cronJobController = require('../controllers/cronJobController');
+const authMiddleware = require('../middleware/authMiddleware');
+router.get('/settings', authMiddleware, cronJobController.getSettings);
+router.put('/settings', authMiddleware, cronJobController.updateSettings);
+router.get('/logs', authMiddleware, cronJobController.getLogs);
+router.post('/run', authMiddleware, cronJobController.runNow);
+module.exports = router;

@@ -34,6 +34,7 @@ app.use('/api/settings', require('./routes/settingRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/reviews', require('./routes/reviewRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
+app.use('/api/cron-job', require('./routes/cronJobRoutes'));
 app.use('/api/chat', require('./routes/chatRoutes'));
 // Sitemap route (public)
 app.use('/sitemap.xml', require('./routes/sitemapRoutes'));
@@ -89,5 +90,10 @@ app.listen(PORT, () => {
   console.log(`📚 API Docs: http://localhost:${PORT}/api-docs`);
   console.log(`💡 Health: http://localhost:${PORT}/health`);
   console.log(`🗺️ Sitemap: http://localhost:${PORT}/sitemap.xml`);
+  // Start cron job on server boot
+  const cronJobService = require('./services/cronJobService');
+  cronJobService.initCronJob().catch(err => {
+    console.error('Failed to start cron job:', err.message);
+  });
 });
 module.exports = app;

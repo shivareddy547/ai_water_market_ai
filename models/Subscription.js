@@ -7,6 +7,10 @@ module.exports = (sequelize) => {
                 foreignKey: 'user_id',
                 as: 'user'
             });
+            Subscription.belongsTo(models.User, {
+                foreignKey: 'supplier_id',
+                as: 'supplier'
+            });
             Subscription.belongsTo(models.Product, {
                 foreignKey: 'product_id',
                 as: 'product'

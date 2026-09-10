@@ -1,6 +1,6 @@
 'use strict';
-const { Subscription } = require('../models');
-
+const { Op } = require('sequelize');
+const { Subscription, User } = require('../models');
 function calcNextDelivery(frequency, customDays) {
     const d = new Date();
     const f = (frequency || '').toLowerCase();
@@ -14,14 +14,12 @@ function calcNextDelivery(frequency, customDays) {
     }
     return d;
 }
-
 function toIsoDate(d) {
     if (!d) return '';
     const dt = d instanceof Date ? d : new Date(d);
     if (Number.isNaN(dt.getTime())) return '';
     return dt.toISOString().split('T')[0];
 }
-
 function mapSubscription(row) {
     const j = typeof row.toJSON === 'function' ? row.toJSON() : row;
     const details = j.details || {};
@@ -30,7 +28,6 @@ function mapSubscription(row) {
         statusRaw === 'active' || statusRaw === 'paused' || statusRaw === 'cancelled'
             ? statusRaw
             : 'active';
-
     const variantName =
         j.variantName ||
         j.variant_name ||
@@ -70,7 +67,6 @@ function mapSubscription(row) {
         : Array.isArray(details.history)
         ? details.history
         : [];
-
     return {
         id: j.id,
         orderId: j.orderId || j.order_id || null,
@@ -101,7 +97,6 @@ function mapSubscription(row) {
         updatedAt: j.updatedAt
     };
 }
-
 class SubscriptionService {
     async createSubscription(data) {
         const {
@@ -123,17 +118,14 @@ class SubscriptionService {
             depositPerDelivery,
             customDays
         } = data;
-
         if (!userId || !frequency) {
             const err = new Error('User ID and frequency are required');
             err.status = 400;
             throw err;
         }
-
         const nextDeliveryDate = calcNextDelivery(frequency, customDays);
         const startedOn = new Date().toISOString().split('T')[0];
         const name = productName || variantName || null;
-
         const subscription = await Subscription.create({
             userId,
             orderId: orderId || null,
@@ -160,10 +152,8 @@ class SubscriptionService {
                 history: []
             }
         });
-
         return mapSubscription(subscription);
     }
-
     async getSubscriptionsByUser(userId) {
         const rows = await Subscription.findAll({
             where: { userId },
@@ -171,7 +161,82 @@ class SubscriptionService {
         });
         return rows.map(mapSubscription);
     }
-
+    async getAllSubscriptionsForAdmin(filters = {}) {
+        const where = {};
+        const include = [];
+        if (filters.status && filters.status !== 'all') {
+            where.status = filters.status;
+        }
+        if (filters.subscriptionId) {
+            where.id = filters.subscriptionId;
+        }
+        if (filters.subscriptionName) {
+            where.productName = { [Op.iLike]: `%${filters.subscriptionName}%` };
+        }
+        if (filters.startDate && filters.endDate) {
+            where.createdAt = {
+                [Op.between]: [
+                    new Date(filters.startDate + 'T00:00:00'),
+                    new Date(filters.endDate + 'T23:59:59')
+                ]
+            };
+        } else if (filters.startDate) {
+            where.createdAt = { [Op.gte]: new Date(filters.startDate + 'T00:00:00') };
+        } else if (filters.endDate) {
+            where.createdAt = { [Op.lte]: new Date(filters.endDate + 'T23:59:59') };
+        }
+        const userInclude = {
+            model: User,
+            as: 'user',
+            required: false
+        };
+        if (filters.customer) {
+            userInclude.where = {
+                [Op.or]: [
+                    { first_name: { [Op.iLike]: `%${filters.customer}%` } },
+                    { last_name: { [Op.iLike]: `%${filters.customer}%` } }
+                ]
+            };
+            userInclude.required = true;
+        }
+        include.push(userInclude);
+        const supplierInclude = {
+            model: User,
+            as: 'supplier',
+            required: false
+        };
+        if (filters.supplier) {
+            supplierInclude.where = {
+                [Op.or]: [
+                    { first_name: { [Op.iLike]: `%${filters.supplier}%` } },
+                    { last_name: { [Op.iLike]: `%${filters.supplier}%` } },
+                    { store_name: { [Op.iLike]: `%${filters.supplier}%` } }
+                ]
+            };
+            supplierInclude.required = true;
+        }
+        include.push(supplierInclude);
+        const rows = await Subscription.findAll({
+            where,
+            include,
+            order: [['created_at', 'DESC']]
+        });
+        return rows.map(row => {
+            const mapped = mapSubscription(row);
+            const userData = row.user;
+            const supplierData = row.supplier;
+            const userFirst = userData ? (userData.firstName || userData.first_name || '') : '';
+            const userLast = userData ? (userData.lastName || userData.last_name || '') : '';
+            const supplierStore = supplierData ? (supplierData.storeName || supplierData.store_name || '') : '';
+            const supplierFirst = supplierData ? (supplierData.firstName || supplierData.first_name || '') : '';
+            const supplierLast = supplierData ? (supplierData.lastName || supplierData.last_name || '') : '';
+            mapped.customerName = `${userFirst} ${userLast}`.trim() || 'Unknown';
+            mapped.customerEmail = userData ? (userData.email || '') : '';
+            mapped.customerPhone = userData ? (userData.phone || '') : '';
+            mapped.supplierName = supplierStore || `${supplierFirst} ${supplierLast}`.trim() || mapped.supplier || 'Unknown';
+            return mapped;
+        });
+    }
     async updateSubscriptionStatus(id, status, userId) {
         const where = userId ? { id, userId } : { id };
         const subscription = await Subscription.findOne({ where });
@@ -184,7 +249,6 @@ class SubscriptionService {
         await subscription.save();
         return mapSubscription(subscription);
     }
-
     async updateSubscription(id, userId, patch) {
         const subscription = await Subscription.findOne({ where: { id, userId } });
         if (!subscription) {
@@ -193,7 +257,6 @@ class SubscriptionService {
             throw err;
         }
         const details = { ...(subscription.details || {}) };
-
         if (patch.frequency !== undefined) subscription.frequency = patch.frequency;
         if (patch.qty !== undefined) subscription.quantity = patch.qty;
         if (patch.quantity !== undefined) subscription.quantity = patch.quantity;
@@ -204,21 +267,17 @@ class SubscriptionService {
         if (patch.addressId !== undefined) details.addressId = patch.addressId;
         if (patch.paymentMethod !== undefined)
             details.paymentMethod = patch.paymentMethod;
-
         subscription.details = details;
         subscription.changed('details', true);
-
         if (patch.frequency !== undefined || patch.customDays !== undefined) {
             subscription.nextDeliveryDate = calcNextDelivery(
                 subscription.frequency,
                 details.customDays
             );
         }
-
         await subscription.save();
         return mapSubscription(subscription);
     }
-
     async deleteSubscription(id, userId) {
         const where = userId ? { id, userId } : { id };
         const subscription = await Subscription.findOne({ where });
@@ -230,19 +289,15 @@ class SubscriptionService {
         await subscription.destroy();
         return { message: 'Subscription deleted successfully' };
     }
-
     async pause(id, userId) {
         return this.updateSubscriptionStatus(id, 'paused', userId);
     }
-
     async resume(id, userId) {
         return this.updateSubscriptionStatus(id, 'active', userId);
     }
-
     async cancel(id, userId) {
         return this.updateSubscriptionStatus(id, 'cancelled', userId);
     }
-
     async skipNext(id, userId) {
         const subscription = await Subscription.findOne({ where: { id, userId } });
         if (!subscription) {
@@ -277,7 +332,6 @@ class SubscriptionService {
         await subscription.save();
         return mapSubscription(subscription);
     }
-
     async deliverNow(id, userId) {
         const subscription = await Subscription.findOne({ where: { id, userId } });
         if (!subscription) {
@@ -306,5 +360,4 @@ class SubscriptionService {
         return mapSubscription(subscription);
     }
 }
-
 module.exports = new SubscriptionService();

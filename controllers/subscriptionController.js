@@ -1,6 +1,5 @@
 'use strict';
 const subscriptionService = require('../services/subscriptionService');
-
 class SubscriptionController {
     async createSubscription(req, res, next) {
         try {
@@ -17,7 +16,6 @@ class SubscriptionController {
             next(err);
         }
     }
-
     async getMySubscriptions(req, res, next) {
         try {
             const subscriptions = await subscriptionService.getSubscriptionsByUser(req.user.id);
@@ -26,7 +24,28 @@ class SubscriptionController {
             next(err);
         }
     }
-
+    async getAllSubscriptions(req, res, next) {
+        try {
+            if (req.user.role !== 'admin') {
+                const err = new Error('Not authorized');
+                err.status = 403;
+                throw err;
+            }
+            const filters = {
+                customer: req.query.customer || '',
+                supplier: req.query.supplier || '',
+                subscriptionId: req.query.subscriptionId || '',
+                subscriptionName: req.query.subscriptionName || '',
+                status: req.query.status || 'all',
+                startDate: req.query.startDate || '',
+                endDate: req.query.endDate || ''
+            };
+            const subscriptions = await subscriptionService.getAllSubscriptionsForAdmin(filters);
+            res.json({ success: true, data: subscriptions });
+        } catch (err) {
+            next(err);
+        }
+    }
     async update(req, res, next) {
         try {
             const subscription = await subscriptionService.updateSubscription(
@@ -39,7 +58,6 @@ class SubscriptionController {
             next(err);
         }
     }
-
     async updateStatus(req, res, next) {
         try {
             const { status } = req.body;
@@ -53,7 +71,6 @@ class SubscriptionController {
             next(err);
         }
     }
-
     async pause(req, res, next) {
         try {
             const subscription = await subscriptionService.pause(req.params.id, req.user.id);
@@ -62,7 +79,6 @@ class SubscriptionController {
             next(err);
         }
     }
-
     async resume(req, res, next) {
         try {
             const subscription = await subscriptionService.resume(req.params.id, req.user.id);
@@ -71,7 +87,6 @@ class SubscriptionController {
             next(err);
         }
     }
-
     async cancel(req, res, next) {
         try {
             const subscription = await subscriptionService.cancel(req.params.id, req.user.id);
@@ -80,7 +95,6 @@ class SubscriptionController {
             next(err);
         }
     }
-
     async skipNext(req, res, next) {
         try {
             const subscription = await subscriptionService.skipNext(req.params.id, req.user.id);
@@ -89,7 +103,6 @@ class SubscriptionController {
             next(err);
         }
     }
-
     async deliverNow(req, res, next) {
         try {
             const subscription = await subscriptionService.deliverNow(req.params.id, req.user.id);
@@ -98,7 +111,6 @@ class SubscriptionController {
             next(err);
         }
     }
-
     async deleteSubscription(req, res, next) {
         try {
             const result = await subscriptionService.deleteSubscription(req.params.id, req.user.id);
@@ -108,5 +120,4 @@ class SubscriptionController {
         }
     }
 }
-
 module.exports = new SubscriptionController();

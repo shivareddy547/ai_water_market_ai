@@ -58,7 +58,12 @@ class SupplierOrderController {
     async updateOrderStatus(req, res, next) {
         try {
             const { orderId } = req.params;
-            const { status } = req.body;
+            const { status, proofImage, proofComment } = req.body;
+            if (status === 'Delivered' && !proofImage && !proofComment) {
+                const err = new Error('Proof image or comment is required for delivered orders.');
+                err.status = 400;
+                throw err;
+            }
             const supplierId = req.user.supplierId || req.user.id;
             const orderRecord = await SupplierOrder.findOne({ where: { userId: supplierId } });
             if (!orderRecord) {
@@ -78,7 +83,11 @@ class SupplierOrderController {
                         by: req.user.firstName + ' ' + req.user.lastName
                     });
                     if (status === 'On The Way') newOrder.startedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    if (status === 'Delivered') newOrder.deliveredAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    if (status === 'Delivered') {
+                        newOrder.deliveredAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        newOrder.proofImage = proofImage || null;
+                        newOrder.proofComment = proofComment || null;
+                    }
                     updatedOrder = newOrder;
                     return newOrder;
                 }
@@ -101,6 +110,10 @@ class SupplierOrderController {
                                 status: status,
                                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                             });
+                            if (status === 'Delivered') {
+                                newSub.proofImage = proofImage || null;
+                                newSub.proofComment = proofComment || null;
+                            }
                             modified = true;
                             return newSub;
                         }

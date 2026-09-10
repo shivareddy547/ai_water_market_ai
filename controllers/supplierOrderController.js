@@ -1,10 +1,13 @@
 'use strict';
-const supplierOrderService = require('../services/supplierOrderService');
+const { SupplierOrder, CustomerOrder } = require('../models');
 class SupplierOrderController {
     async getOrders(req, res, next) {
         try {
-            const orders = await supplierOrderService.getOrdersByUserId(req.user.id);
-            res.json({ success: true, data: orders });
+            let orderRecord = await SupplierOrder.findOne({ where: { userId: req.user.id } });
+            if (!orderRecord) {
+                orderRecord = await SupplierOrder.create({ userId: req.user.id, orders: [] });
+            }
+            res.json({ success: true, data: orderRecord.orders });
         } catch (err) {
             next(err);
         }
@@ -12,16 +15,30 @@ class SupplierOrderController {
     async updateOrders(req, res, next) {
         try {
             const { orders } = req.body;
-            const updatedOrders = await supplierOrderService.updateOrders(req.user.id, orders);
-            res.json({ success: true, data: updatedOrders, message: 'Orders updated successfully' });
+            let orderRecord = await SupplierOrder.findOne({ where: { userId: req.user.id } });
+            if (!orderRecord) {
+                orderRecord = await SupplierOrder.create({ userId: req.user.id, orders: orders || [] });
+            } else {
+                orderRecord.orders = orders || [];
+                await orderRecord.save();
+            }
+            res.json({ success: true, data: orderRecord.orders });
         } catch (err) {
             next(err);
         }
     }
     async getAssignedOrders(req, res, next) {
         try {
-            const orders = await supplierOrderService.getAssignedOrdersForDelivery(req.user.id);
-            res.json({ success: true, data: orders });
+            const supplierId = req.user.supplierId;
+            if (!supplierId) {
+                return res.json({ success: true, data: [] });
+            }
+            const orderRecord = await SupplierOrder.findOne({ where: { userId: supplierId } });
+            if (!orderRecord) {
+                return res.json({ success: true, data: [] });
+            }
+            const assignedOrders = orderRecord.orders.filter(o => o.deliveryPersonId === req.user.id);
+            res.json({ success: true, data: assignedOrders });
         } catch (err) {
             next(err);
         }
@@ -30,13 +47,56 @@ class SupplierOrderController {
         try {
             const { orderId } = req.params;
             const { status } = req.body;
-            if (!orderId || !status) {
-                const err = new Error('Order ID and status are required');
-                err.status = 400;
+            const supplierId = req.user.supplierId || req.user.id;
+            const orderRecord = await SupplierOrder.findOne({ where: { userId: supplierId } });
+            if (!orderRecord) {
+                const err = new Error('Supplier order record not found');
+                err.status = 404;
                 throw err;
             }
-            const updatedOrder = await supplierOrderService.updateOrderStatus(req.user.id, orderId, status);
-            res.json({ success: true, data: updatedOrder, message: 'Order status updated successfully' });
+            let updatedOrder = null;
+            const orders = orderRecord.orders.map(o => {
+                if (o.id === orderId) {
+                    o.status = status;
+                    if (!o.statusHistory) o.statusHistory = [];
+                    o.statusHistory.push({
+                        status: status,
+                        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        by: req.user.firstName + ' ' + req.user.lastName
+                    });
+                    if (status === 'On The Way') o.startedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    if (status === 'Delivered') o.deliveredAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    updatedOrder = o;
+                }
+                return o;
+            });
+            orderRecord.orders = orders;
+            await orderRecord.save();
+            // Sync status to CustomerOrder
+            if (updatedOrder && updatedOrder.customerOrderId) {
+                const cOrder = await CustomerOrder.findByPk(updatedOrder.customerOrderId);
+                if (cOrder) {
+                    let subOrders = cOrder.subOrders;
+                    let modified = false;
+                    subOrders = subOrders.map(s => {
+                        if (s.id === orderId) {
+                            s.status = status;
+                            if (!s.timeline) s.timeline = [];
+                            s.timeline.push({
+                                status: status,
+                                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            });
+                            modified = true;
+                        }
+                        return s;
+                    });
+                    if (modified) {
+                        cOrder.subOrders = subOrders;
+                        await cOrder.save();
+                    }
+                }
+            }
+            res.json({ success: true, data: updatedOrder });
         } catch (err) {
             next(err);
         }

@@ -1,5 +1,5 @@
 'use strict';
-const { SupplierOrder, CustomerOrder, DeliveryTeam } = require('../models');
+const { SupplierOrder, CustomerOrder, Notification, DeliveryTeam } = require('../models');
 class SupplierOrderController {
     async getOrders(req, res, next) {
         try {
@@ -33,22 +33,23 @@ class SupplierOrderController {
             if (!supplierId) {
                 return res.json({ success: true, data: [] });
             }
-            // Find the delivery person's team ID (dp_...) from DeliveryTeam data
             const teamRecord = await DeliveryTeam.findOne({ where: { userId: supplierId } });
             if (!teamRecord || !teamRecord.data || !teamRecord.data.persons) {
                 return res.json({ success: true, data: [] });
             }
-            const deliveryPerson = teamRecord.data.persons.find(p => p.userId === req.user.id);
-            if (!deliveryPerson) {
+            // Find all delivery person IDs linked to this user account
+            const validPersonIds = teamRecord.data.persons
+                .filter(p => p.userId === req.user.id || p.id === req.user.id)
+                .map(p => p.id);
+            if (validPersonIds.length === 0) {
                 return res.json({ success: true, data: [] });
             }
-            const dpId = deliveryPerson.id;
             const orderRecord = await SupplierOrder.findOne({ where: { userId: supplierId } });
             if (!orderRecord) {
                 return res.json({ success: true, data: [] });
             }
             // Filter orders by the matched dpId
-            const assignedOrders = orderRecord.orders.filter(o => o.deliveryPersonId === dpId);
+            const assignedOrders = orderRecord.orders.filter(o => validPersonIds.includes(o.deliveryPersonId));
             res.json({ success: true, data: assignedOrders });
         } catch (err) {
             next(err);
@@ -68,42 +69,56 @@ class SupplierOrderController {
             let updatedOrder = null;
             const orders = orderRecord.orders.map(o => {
                 if (o.id === orderId) {
-                    o.status = status;
-                    if (!o.statusHistory) o.statusHistory = [];
-                    o.statusHistory.push({
+                    const newOrder = { ...o };
+                    newOrder.status = status;
+                    if (!newOrder.statusHistory) newOrder.statusHistory = [];
+                    newOrder.statusHistory.push({
                         status: status,
                         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         by: req.user.firstName + ' ' + req.user.lastName
                     });
-                    if (status === 'On The Way') o.startedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    if (status === 'Delivered') o.deliveredAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    updatedOrder = o;
+                    if (status === 'On The Way') newOrder.startedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    if (status === 'Delivered') newOrder.deliveredAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    updatedOrder = newOrder;
+                    return newOrder;
                 }
                 return o;
             });
             orderRecord.orders = orders;
+            orderRecord.changed('orders', true); // Force Sequelize to recognize JSONB change
             await orderRecord.save();
-            // Sync status to CustomerOrder
+            // Sync status to CustomerOrder and Send Notification
             if (updatedOrder && updatedOrder.customerOrderId) {
                 const cOrder = await CustomerOrder.findByPk(updatedOrder.customerOrderId);
                 if (cOrder) {
-                    let subOrders = cOrder.subOrders;
                     let modified = false;
-                    subOrders = subOrders.map(s => {
+                    const subOrders = cOrder.subOrders.map(s => {
                         if (s.id === orderId) {
-                            s.status = status;
-                            if (!s.timeline) s.timeline = [];
-                            s.timeline.push({
+                            const newSub = { ...s };
+                            newSub.status = status;
+                            if (!newSub.timeline) newSub.timeline = [];
+                            newSub.timeline.push({
                                 status: status,
                                 time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                             });
                             modified = true;
+                            return newSub;
                         }
                         return s;
                     });
                     if (modified) {
                         cOrder.subOrders = subOrders;
+                        cOrder.changed('subOrders', true); // Force Sequelize to recognize JSONB change
                         await cOrder.save();
+                        // Send Notification to Customer
+                        await Notification.create({
+                            userId: cOrder.userId,
+                            type: 'order_status',
+                            title: 'Order Status Updated',
+                            message: `Your order #${orderId.substring(0, 8)} is now ${status}.`,
+                            link: '/customer/orders',
+                            isRead: false
+                        });
                     }
                 }
             }

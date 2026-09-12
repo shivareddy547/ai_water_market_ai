@@ -81,7 +81,7 @@ class UserService {
             err.status = 404;
             throw err;
         }
-        const { storeName, firstName, lastName, businessType, description, commission, categories, address, city, stateName, pincode, gst, logo, coverImage, warehouseAddresses, tagline, whatsapp, website, isFeatured } = data;
+        const { storeName, firstName, lastName, businessType, description, commission, categories, address, city, stateName, pincode, gst, logo, coverImage, warehouseAddresses, tagline, whatsapp, website, isFeatured, platformFeeEnabled, platformFeeType, platformFeeValue } = data;
         if (storeName !== undefined) user.storeName = storeName;
         if (firstName !== undefined) user.firstName = firstName;
         if (lastName !== undefined) user.lastName = lastName;
@@ -101,6 +101,9 @@ class UserService {
         if (whatsapp !== undefined) user.whatsapp = whatsapp;
         if (website !== undefined) user.website = website;
         if (isFeatured !== undefined) user.isFeatured = isFeatured;
+        if (platformFeeEnabled !== undefined) user.platformFeeEnabled = platformFeeEnabled;
+        if (platformFeeType !== undefined) user.platformFeeType = platformFeeType;
+        if (platformFeeValue !== undefined) user.platformFeeValue = platformFeeValue;
         await user.save();
         return user;
     }

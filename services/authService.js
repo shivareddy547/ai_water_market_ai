@@ -12,7 +12,7 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 class AuthService {
     async signup(payload) {
-        const { firstName, lastName, email, phone, password, role, storeName, businessType, gst, description, address, city, stateName, pincode } = payload;
+        const { firstName, lastName, email, phone, password, role, storeName, businessType, gst, description, address, city, stateName, pincode, categories, commission, platformFeeEnabled, platformFeeType, platformFeeValue } = payload;
         if (!firstName || !String(firstName).trim()) {
             const err = new Error('First name is required');
             err.status = 400;
@@ -54,7 +54,7 @@ class AuthService {
         }
         const allowedRoles = ['user', 'supplier', 'delivery', 'admin'];
         const finalRole = allowedRoles.includes(role) ? role : 'user';
-        const user = await User.scope('withPassword').create({
+        const createPayload = {
             firstName: firstName.trim(),
             lastName: lastName.trim(),
             email: normalizedEmail,
@@ -73,7 +73,15 @@ class AuthService {
             emailVerified: false,
             phoneVerified: false,
             isActive: true
-        });
+        };
+        if (finalRole === 'supplier') {
+            if (categories !== undefined) createPayload.categories = categories;
+            if (commission !== undefined) createPayload.commission = commission;
+            if (platformFeeEnabled !== undefined) createPayload.platformFeeEnabled = platformFeeEnabled;
+            if (platformFeeType !== undefined) createPayload.platformFeeType = platformFeeType;
+            if (platformFeeValue !== undefined) createPayload.platformFeeValue = platformFeeValue;
+        }
+        const user = await User.scope('withPassword').create(createPayload);
         const token = this.generateToken(user);
         return {
             user: this.sanitizeUser(user),
@@ -196,7 +204,7 @@ class AuthService {
                 err.status = 400;
                 throw err;
             }
-            user.password = password; // Hashed by hook
+            user.password = password;
         }
         
         await user.save();

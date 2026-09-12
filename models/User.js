@@ -145,6 +145,24 @@ module.exports = (sequelize) => {
             allowNull: false,
             defaultValue: 10
         },
+        platformFeeEnabled: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+            field: 'platform_fee_enabled'
+        },
+        platformFeeType: {
+            type: DataTypes.STRING(20),
+            allowNull: false,
+            defaultValue: 'percentage',
+            field: 'platform_fee_type'
+        },
+        platformFeeValue: {
+            type: DataTypes.DECIMAL(10, 2),
+            allowNull: false,
+            defaultValue: 0,
+            field: 'platform_fee_value'
+        },
         verificationStatus: {
             type: DataTypes.ENUM('pending', 'verified', 'rejected'),
             allowNull: false,

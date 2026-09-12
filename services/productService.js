@@ -1,5 +1,32 @@
 'use strict';
 const { Product, User } = require('../models');
+const SUPPLIER_ATTRS = [
+  'id',
+  'first_name',
+  'last_name',
+  'store_name',
+  'warehouseAddresses',
+  'platform_fee_enabled',
+  'platform_fee_type',
+  'platform_fee_value'
+];
+const decorateSupplier = (item) => {
+  const u = item.user || {};
+  const storeName = u.store_name || u.storeName || '';
+  const firstName = u.first_name || u.firstName || '';
+  const lastName = u.last_name || u.lastName || '';
+  const fullName = `${firstName} ${lastName}`.trim();
+  item.supplierId = u.id || item.userId;
+  item.supplierName =
+    storeName || fullName || `Supplier #${(item.supplierId || '').slice(-6).toUpperCase()}`;
+  const feeEnabled = u.platform_fee_enabled ?? u.platformFeeEnabled;
+  const feeType = u.platform_fee_type ?? u.platformFeeType;
+  const feeValue = u.platform_fee_value ?? u.platformFeeValue;
+  item.supplierPlatformFeeEnabled = !!feeEnabled;
+  item.supplierPlatformFeeType = feeType === 'flat' ? 'flat' : 'percentage';
+  item.supplierPlatformFeeValue = Number(feeValue || 0);
+  return item;
+};
 class ProductService {
     async getAllActiveProducts(query = {}) {
         const where = { status: 'active' };
@@ -11,24 +38,14 @@ class ProductService {
             include: [{
                 model: User,
                 as: 'user',
-                attributes: ['id', 'first_name', 'last_name', 'store_name', 'warehouseAddresses']
+                attributes: SUPPLIER_ATTRS
             }],
             order: [['created_at', 'DESC']]
         });
-        return products.map(p => {
-            const item = p.toJSON();
-            const u = item.user || {};
-            const storeName = u.store_name || u.storeName || '';
-            const firstName = u.first_name || u.firstName || '';
-            const lastName = u.last_name || u.lastName || '';
-            const fullName = `${firstName} ${lastName}`.trim();
-            item.supplierId = u.id || item.userId;
-            item.supplierName = storeName || fullName || `Supplier #${(item.supplierId || '').slice(-6).toUpperCase()}`;
-            return item;
-        });
+        return products.map(p => decorateSupplier(p.toJSON()));
     }
     async getPopularProducts() {
-        const where = { 
+        const where = {
             status: 'active',
             isPopular: true
         };
@@ -37,42 +54,22 @@ class ProductService {
             include: [{
                 model: User,
                 as: 'user',
-                attributes: ['id', 'first_name', 'last_name', 'store_name', 'warehouseAddresses']
+                attributes: SUPPLIER_ATTRS
             }],
             order: [['created_at', 'DESC']]
         });
-        return products.map(p => {
-            const item = p.toJSON();
-            const u = item.user || {};
-            const storeName = u.store_name || u.storeName || '';
-            const firstName = u.first_name || u.firstName || '';
-            const lastName = u.last_name || u.lastName || '';
-            const fullName = `${firstName} ${lastName}`.trim();
-            item.supplierId = u.id || item.userId;
-            item.supplierName = storeName || fullName || `Supplier #${(item.supplierId || '').slice(-6).toUpperCase()}`;
-            return item;
-        });
+        return products.map(p => decorateSupplier(p.toJSON()));
     }
     async getAllProducts() {
         const products = await Product.findAll({
             include: [{
                 model: User,
                 as: 'user',
-                attributes: ['id', 'first_name', 'last_name', 'store_name', 'warehouseAddresses']
+                attributes: SUPPLIER_ATTRS
             }],
             order: [['created_at', 'DESC']]
         });
-        return products.map(p => {
-            const item = p.toJSON();
-            const u = item.user || {};
-            const storeName = u.store_name || u.storeName || '';
-            const firstName = u.first_name || u.firstName || '';
-            const lastName = u.last_name || u.lastName || '';
-            const fullName = `${firstName} ${lastName}`.trim();
-            item.supplierId = u.id || item.userId;
-            item.supplierName = storeName || fullName || `Supplier #${(item.supplierId || '').slice(-6).toUpperCase()}`;
-            return item;
-        });
+        return products.map(p => decorateSupplier(p.toJSON()));
     }
     async getProductsByUser(userId) {
         return await Product.findAll({

@@ -1,10 +1,50 @@
 'use strict';
-const { CustomerOrder, SupplierOrder, User } = require('../models');
-const { v4: uuidv4 } = require('uuid');
+const { CustomerOrder, User } = require('../models');
 
 class CustomerOrderService {
-    async createOrder(userId, orderData) {
-        const { subOrders, paymentMethod } = orderData;
+    async getAllOrders(userId, userRole) {
+        const where = userRole === 'admin' ? {} : { userId };
+
+        const orders = await CustomerOrder.findAll({
+            where,
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'first_name', 'last_name', 'email', 'phone']
+                }
+            ],
+            order: [['created_at', 'DESC']]
+        });
+
+        return orders;
+    }
+
+    async getOrderById(id, userId, userRole) {
+        const where = userRole === 'admin' ? { id } : { id, userId };
+
+        const order = await CustomerOrder.findOne({
+            where,
+            include: [
+                {
+                    model: User,
+                    as: 'user',
+                    attributes: ['id', 'first_name', 'last_name', 'email', 'phone']
+                }
+            ]
+        });
+
+        if (!order) {
+            const err = new Error('Order not found');
+            err.status = 404;
+            throw err;
+        }
+
+        return order;
+    }
+
+    async createOrder(userId, data) {
+        const { subOrders, paymentMethod } = data;
 
         if (!subOrders || !Array.isArray(subOrders) || subOrders.length === 0) {
             const err = new Error('Sub-orders are required');
@@ -13,90 +53,26 @@ class CustomerOrderService {
         }
 
         let totalAmount = 0;
-        const orderNumber = `ORD-${Date.now()}${Math.floor(Math.random() * 1000)}`;
-
         for (const subOrder of subOrders) {
-            // Ensure financial fields have defaults if not provided
-            subOrder.itemsTotal = Number(subOrder.itemsTotal || 0);
-            subOrder.depositTotal = Number(subOrder.depositTotal || 0);
-            subOrder.shipping = Number(subOrder.shipping || 0);
-            subOrder.platformFee = Number(subOrder.platformFee || 0);
-            subOrder.platformFeeEnabled = !!subOrder.platformFeeEnabled;
-            subOrder.platformFeeType = subOrder.platformFeeType || 'percentage';
-            subOrder.platformFeeValue = Number(subOrder.platformFeeValue || 0);
-            
-            const calculatedGrandTotal = subOrder.itemsTotal + subOrder.depositTotal + subOrder.shipping + subOrder.platformFee;
-            subOrder.grandTotal = calculatedGrandTotal;
-
-            totalAmount += calculatedGrandTotal;
+            const itemsTotal = Number(subOrder.itemsTotal || 0);
+            const depositTotal = Number(subOrder.depositTotal || 0);
+            const shipping = Number(subOrder.shipping || 0);
+            const platformFee = Number(subOrder.platformFee || 0);
+            totalAmount += itemsTotal + depositTotal + shipping + platformFee;
         }
 
-        const customerOrder = await CustomerOrder.create({
+        const orderNumber = `ORD-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+        const order = await CustomerOrder.create({
             userId,
             orderNumber,
             subOrders,
             totalAmount,
-            paymentMethod,
+            paymentMethod: paymentMethod || 'COD',
             status: 'Placed'
         });
 
-        const supplierOrdersByUser = {};
-        for (const subOrder of subOrders) {
-            if (!subOrder.supplierId) continue;
-            if (!supplierOrdersByUser[subOrder.supplierId]) {
-                supplierOrdersByUser[subOrder.supplierId] = [];
-            }
-            const supplierOrderEntry = {
-                id: `${orderNumber}-${subOrder.supplierId.slice(-4)}`,
-                parentOrderId: customerOrder.id,
-                supplier: subOrder.supplier,
-                supplierId: subOrder.supplierId,
-                items: subOrder.lines,
-                address: subOrder.address,
-                paymentMode: paymentMethod,
-                paymentStatus: paymentMethod === 'COD' ? 'Pending' : 'Paid',
-                status: 'Pending',
-                createdAt: new Date().toISOString(),
-                slot: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
-                area: subOrder.address?.city || '',
-                
-                // Financial breakdown
-                itemsTotal: subOrder.itemsTotal,
-                depositTotal: subOrder.depositTotal,
-                shippingAmount: subOrder.shipping,
-                total: subOrder.grandTotal,
-                
-                // Platform fee fields (snapshot)
-                platformFeeEnabled: subOrder.platformFeeEnabled,
-                platformFeeType: subOrder.platformFeeType,
-                platformFeeValue: subOrder.platformFeeValue,
-                platformFee: subOrder.platformFee,
-
-                // Default operational fields
-                deliveryPersonId: null,
-                statusHistory: [{ status: 'Pending', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), by: 'System' }],
-                commissionPaid: false,
-            };
-            supplierOrdersByUser[subOrder.supplierId].push(supplierOrderEntry);
-        }
-
-        for (const supplierId in supplierOrdersByUser) {
-            const newOrders = supplierOrdersByUser[supplierId];
-            let supplierOrderRecord = await SupplierOrder.findOne({ where: { userId: supplierId } });
-            
-            if (supplierOrderRecord) {
-                const existingOrders = supplierOrderRecord.orders || [];
-                supplierOrderRecord.orders = [...newOrders, ...existingOrders];
-                await supplierOrderRecord.save();
-            } else {
-                await SupplierOrder.create({
-                    userId: supplierId,
-                    orders: newOrders
-                });
-            }
-        }
-
-        return customerOrder;
+        return order;
     }
 }
 

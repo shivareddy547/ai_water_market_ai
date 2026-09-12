@@ -1,167 +1,103 @@
 'use strict';
 const { CustomerOrder, SupplierOrder, User } = require('../models');
-
-const nowIso = () => new Date().toISOString();
-
-const buildSupplierOrderEntry = (so, order, customerName) => {
-  const items = Array.isArray(so.lines)
-    ? so.lines.map(l => ({
-        name: l.name,
-        qty: Number(l.qty) || 0,
-        price: Number(l.price) || 0,
-        image: l.image || null,
-        sku: l.sku || null,
-        categoryIcon: l.categoryIcon || '💧',
-        isSubscription: !!l.isSubscription,
-        frequency: l.frequency || null,
-      }))
-    : [];
-  const platformFee = Number(so.platformFee) || 0;
-  const platformFeeEnabled = !!so.platformFeeEnabled && platformFee > 0;
-  const platformFeeType = so.platformFeeType === 'flat' ? 'flat' : 'percentage';
-  const platformFeeValue = Number(so.platformFeeValue) || 0;
-  const address = so.address || {};
-  const addressLine =
-    `${address.line || ''}` +
-    `${address.landmark ? `, ${address.landmark}` : ''}` +
-    `, ${address.city || ''} - ${address.pincode || ''}`;
-  return {
-    id: so.id || `ORD-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`,
-    customer: customerName,
-    phone: address.phone || '',
-    address: addressLine,
-    area: address.city || '',
-    items,
-    itemsTotal: Number(so.itemsTotal) || 0,
-    shippingAmount: Number(so.shipping) || 0,
-    canDeposit: Number(so.depositTotal) || 0,
-    platformFeeEnabled,
-    platformFeeType,
-    platformFeeValue,
-    platformFee,
-    total: Number(so.grandTotal) || 0,
-    paymentMode:
-      order.paymentMethod === 'Card'
-        ? 'UPI'
-        : order.paymentMethod || 'COD',
-    paymentStatus: order.paymentMethod === 'COD' ? 'Pending' : 'Paid',
-    isSubscription: items.some(i => i.isSubscription),
-    collectEmptyCan: (Number(so.depositTotal) || 0) > 0,
-    slot: 'Today',
-    priority: 'normal',
-    status: 'Pending',
-    deliveryPersonId: null,
-    assignedAt: '',
-    acceptedAt: '',
-    startedAt: '',
-    deliveredAt: '',
-    createdAt: nowIso(),
-    statusHistory: [{ status: 'Pending', time: nowIso(), by: 'Customer order' }],
-  };
-};
+const { v4: uuidv4 } = require('uuid');
 
 class CustomerOrderService {
-    async createOrder(userId, data) {
-        const { subOrders = [], paymentMethod } = data || {};
-        if (!Array.isArray(subOrders) || subOrders.length === 0) {
-            const err = new Error('At least one sub-order is required');
+    async createOrder(userId, orderData) {
+        const { subOrders, paymentMethod } = orderData;
+
+        if (!subOrders || !Array.isArray(subOrders) || subOrders.length === 0) {
+            const err = new Error('Sub-orders are required');
             err.status = 400;
             throw err;
         }
-        const normalizedSubOrders = subOrders.map(so => {
-            const itemsTotal = Number(so.itemsTotal) || 0;
-            const depositTotal = Number(so.depositTotal) || 0;
-            const shipping = Number(so.shipping) || 0;
-            const platformFeeEnabled = so.platformFeeEnabled === true;
-            const platformFeeType = so.platformFeeType === 'flat' ? 'flat' : 'percentage';
-            const platformFeeValue = Number(so.platformFeeValue) || 0;
-            const computedFee =
-                platformFeeEnabled && platformFeeValue > 0
-                    ? platformFeeType === 'percentage'
-                        ? (itemsTotal * platformFeeValue) / 100
-                        : platformFeeValue
-                    : 0;
-            const incomingFee = Number(so.platformFee);
-            const platformFee =
-                Number.isFinite(incomingFee) && incomingFee > 0
-                    ? incomingFee
-                    : computedFee;
-            const grandTotal = itemsTotal + depositTotal + shipping + platformFee;
-            return {
-                ...so,
-                itemsTotal,
-                depositTotal,
-                shipping,
-                platformFeeEnabled: platformFeeEnabled && platformFee > 0,
-                platformFeeType,
-                platformFeeValue,
-                platformFee,
-                grandTotal,
-            };
-        });
-        const totalAmount = normalizedSubOrders.reduce(
-            (n, so) => n + (Number(so.grandTotal) || 0),
-            0
-        );
-        const orderNumber = `ORD-${Date.now().toString().slice(-8)}${Math.floor(
-            Math.random() * 90 + 10
-        )}`;
-        const order = await CustomerOrder.create({
+
+        let totalAmount = 0;
+        const orderNumber = `ORD-${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+        for (const subOrder of subOrders) {
+            // Ensure financial fields have defaults if not provided
+            subOrder.itemsTotal = Number(subOrder.itemsTotal || 0);
+            subOrder.depositTotal = Number(subOrder.depositTotal || 0);
+            subOrder.shipping = Number(subOrder.shipping || 0);
+            subOrder.platformFee = Number(subOrder.platformFee || 0);
+            subOrder.platformFeeEnabled = !!subOrder.platformFeeEnabled;
+            subOrder.platformFeeType = subOrder.platformFeeType || 'percentage';
+            subOrder.platformFeeValue = Number(subOrder.platformFeeValue || 0);
+            
+            const calculatedGrandTotal = subOrder.itemsTotal + subOrder.depositTotal + subOrder.shipping + subOrder.platformFee;
+            subOrder.grandTotal = calculatedGrandTotal;
+
+            totalAmount += calculatedGrandTotal;
+        }
+
+        const customerOrder = await CustomerOrder.create({
             userId,
             orderNumber,
-            subOrders: normalizedSubOrders,
+            subOrders,
             totalAmount,
-            paymentMethod: paymentMethod || 'COD',
-            status: 'Placed',
+            paymentMethod,
+            status: 'Placed'
         });
 
-        // Sync each sub-order into the respective supplier's order list
-        // so the supplier page reads the *snapshot* — including the
-        // platform fee as it was at the time of the order.
-        try {
-            const customer = await User.findByPk(userId);
-            const customerName = customer
-                ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim() ||
-                  'Customer'
-                : 'Customer';
-            for (const so of normalizedSubOrders) {
-                if (!so.supplierId) continue;
-                const entry = buildSupplierOrderEntry(so, order, customerName);
-                const record = await SupplierOrder.findOne({
-                    where: { userId: so.supplierId },
-                });
-                if (record) {
-                    const existing = Array.isArray(record.orders) ? record.orders : [];
-                    record.orders = [...existing, entry];
-                    record.changed('orders', true);
-                    await record.save();
-                } else {
-                    await SupplierOrder.create({
-                        userId: so.supplierId,
-                        orders: [entry],
-                    });
-                }
+        const supplierOrdersByUser = {};
+        for (const subOrder of subOrders) {
+            if (!subOrder.supplierId) continue;
+            if (!supplierOrdersByUser[subOrder.supplierId]) {
+                supplierOrdersByUser[subOrder.supplierId] = [];
             }
-        } catch (syncErr) {
-            console.error('Failed to sync sub-orders to suppliers', syncErr.message);
+            const supplierOrderEntry = {
+                id: `${orderNumber}-${subOrder.supplierId.slice(-4)}`,
+                parentOrderId: customerOrder.id,
+                supplier: subOrder.supplier,
+                supplierId: subOrder.supplierId,
+                items: subOrder.lines,
+                address: subOrder.address,
+                paymentMode: paymentMethod,
+                paymentStatus: paymentMethod === 'COD' ? 'Pending' : 'Paid',
+                status: 'Pending',
+                createdAt: new Date().toISOString(),
+                slot: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+                area: subOrder.address?.city || '',
+                
+                // Financial breakdown
+                itemsTotal: subOrder.itemsTotal,
+                depositTotal: subOrder.depositTotal,
+                shippingAmount: subOrder.shipping,
+                total: subOrder.grandTotal,
+                
+                // Platform fee fields (snapshot)
+                platformFeeEnabled: subOrder.platformFeeEnabled,
+                platformFeeType: subOrder.platformFeeType,
+                platformFeeValue: subOrder.platformFeeValue,
+                platformFee: subOrder.platformFee,
+
+                // Default operational fields
+                deliveryPersonId: null,
+                statusHistory: [{ status: 'Pending', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), by: 'System' }],
+                commissionPaid: false,
+            };
+            supplierOrdersByUser[subOrder.supplierId].push(supplierOrderEntry);
         }
 
-        return order;
-    }
-    async getUserOrders(userId) {
-        return await CustomerOrder.findAll({
-            where: { userId },
-            order: [['created_at', 'DESC']],
-        });
-    }
-    async getOrderById(id, userId) {
-        const order = await CustomerOrder.findOne({ where: { id, userId } });
-        if (!order) {
-            const err = new Error('Order not found');
-            err.status = 404;
-            throw err;
+        for (const supplierId in supplierOrdersByUser) {
+            const newOrders = supplierOrdersByUser[supplierId];
+            let supplierOrderRecord = await SupplierOrder.findOne({ where: { userId: supplierId } });
+            
+            if (supplierOrderRecord) {
+                const existingOrders = supplierOrderRecord.orders || [];
+                supplierOrderRecord.orders = [...newOrders, ...existingOrders];
+                await supplierOrderRecord.save();
+            } else {
+                await SupplierOrder.create({
+                    userId: supplierId,
+                    orders: newOrders
+                });
+            }
         }
-        return order;
+
+        return customerOrder;
     }
 }
+
 module.exports = new CustomerOrderService();

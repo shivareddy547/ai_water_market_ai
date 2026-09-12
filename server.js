@@ -26,6 +26,7 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/delivery-team', require('./routes/deliveryTeamRoutes'));
 app.use('/api/orders', require('./routes/supplierOrderRoutes'));
+app.use('/api/admin/orders', require('./routes/adminOrderRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
 app.use('/api/addresses', require('./routes/addressRoutes'));
 app.use('/api/customer-orders', require('./routes/customerOrderRoutes'));

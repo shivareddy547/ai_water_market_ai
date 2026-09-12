@@ -1,132 +1,83 @@
 'use strict';
-const { SupplierOrder, DeliveryTeam, User } = require('../models');
+const { SupplierOrder } = require('../models');
+
+const computePlatformFeeSnapshot = order => {
+  const explicit = Number(order?.platformFee ?? order?.platform_fee);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  // Only recompute if the order explicitly carries the flag as true
+  // — never fall back to the supplier's current settings.
+  const enabled =
+    order?.platformFeeEnabled === true ||
+    order?.platform_fee_enabled === true;
+  if (!enabled) return 0;
+  const rawType = order?.platformFeeType ?? order?.platform_fee_type;
+  const type = rawType === 'flat' ? 'flat' : 'percentage';
+  const value = Number(order?.platformFeeValue ?? order?.platform_fee_value ?? 0);
+  if (!value || value <= 0) return 0;
+  const itemsTotal = Array.isArray(order?.items)
+    ? order.items.reduce(
+        (n, it) =>
+          n + (Number(it.price) || 0) * (Number(it.qty) || 0),
+        0
+      )
+    : Number(order?.itemsTotal) || 0;
+  return type === 'percentage' ? (itemsTotal * value) / 100 : value;
+};
+
 class SupplierOrderService {
-    async getOrdersByUserId(userId) {
-        const user = await User.findByPk(userId);
-        if (!user) {
-            const err = new Error('User not found');
-            err.status = 404;
-            throw err;
-        }
-        let supplierUserId = userId;
-        if (user.role === 'delivery') {
-            if (!user.supplierId) {
-                return [];
-            }
-            supplierUserId = user.supplierId;
-        } else if (user.role !== 'supplier') {
-            const err = new Error('Unauthorized to view orders');
-            err.status = 403;
-            throw err;
-        }
-        const supplierOrder = await SupplierOrder.findOne({ where: { userId: supplierUserId } });
-        if (!supplierOrder) {
-            return [];
-        }
-        return supplierOrder.orders || [];
+    async getOrders(userId) {
+        const record = await SupplierOrder.findOne({ where: { userId } });
+        return record ? record.orders || [] : [];
     }
-    async updateOrders(userId, orders) {
+    async saveOrders(userId, orders) {
         if (!Array.isArray(orders)) {
-            const err = new Error('Orders must be an array');
+            const err = new Error('orders must be an array');
             err.status = 400;
             throw err;
         }
-        const user = await User.findByPk(userId);
-        if (!user || user.role !== 'supplier') {
-            const err = new Error('Only suppliers can update orders');
-            err.status = 403;
-            throw err;
-        }
-        let supplierOrder = await SupplierOrder.findOne({ where: { userId: userId } });
-        if (!supplierOrder) {
-            supplierOrder = await SupplierOrder.create({ userId: userId, orders: orders });
-        } else {
-            supplierOrder.orders = orders;
-            await supplierOrder.save();
-        }
-        return supplierOrder.orders;
-    }
-    async getAssignedOrdersForDelivery(deliveryUserId) {
-        const user = await User.findByPk(deliveryUserId);
-        if (!user || user.role !== 'delivery') {
-            const err = new Error('Delivery user not found');
-            err.status = 404;
-            throw err;
-        }
-        if (!user.supplierId) {
-            return [];
-        }
-        const deliveryTeam = await DeliveryTeam.findOne({ where: { userId: user.supplierId } });
-        if (!deliveryTeam || !deliveryTeam.data) {
-            return [];
-        }
-        const teamData = deliveryTeam.data;
-        const persons = teamData.persons || [];
-        const deliveryPerson = persons.find(p => p.userId === deliveryUserId);
-        if (!deliveryPerson) {
-            return [];
-        }
-        const supplierOrder = await SupplierOrder.findOne({ where: { userId: user.supplierId } });
-        if (!supplierOrder || !supplierOrder.orders) {
-            return [];
-        }
-        const assignedOrders = supplierOrder.orders.filter(
-            o => o.deliveryPersonId === deliveryPerson.id
-        );
-        return assignedOrders;
-    }
-    async updateOrderStatus(userId, orderId, newStatus) {
-        const user = await User.findByPk(userId);
-        if (!user) {
-            const err = new Error('User not found');
-            err.status = 404;
-            throw err;
-        }
-        let supplierUserId = userId;
-        if (user.role === 'delivery') {
-            if (!user.supplierId) {
-                const err = new Error('Not assigned to a supplier');
-                err.status = 403;
-                throw err;
-            }
-            supplierUserId = user.supplierId;
-        } else if (user.role !== 'supplier') {
-            const err = new Error('Unauthorized');
-            err.status = 403;
-            throw err;
-        }
-        const supplierOrder = await SupplierOrder.findOne({ where: { userId: supplierUserId } });
-        if (!supplierOrder || !supplierOrder.orders) {
-            const err = new Error('Orders not found');
-            err.status = 404;
-            throw err;
-        }
-        const orders = supplierOrder.orders;
-        const index = orders.findIndex(o => o.id === orderId);
-        if (index === -1) {
-            const err = new Error('Order not found');
-            err.status = 404;
-            throw err;
-        }
-        orders[index].status = newStatus;
-        if (!orders[index].statusHistory) {
-            orders[index].statusHistory = [];
-        }
-        orders[index].statusHistory.push({ 
-            status: newStatus, 
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 
-            by: user.role === 'delivery' ? `${user.firstName} ${user.lastName}` : 'Supplier' 
+        const normalized = orders.map(o => {
+            const platformFee = computePlatformFeeSnapshot(o);
+            const platformFeeEnabled = platformFee > 0;
+            const rawType = o.platformFeeType ?? o.platform_fee_type;
+            const platformFeeType = rawType === 'flat' ? 'flat' : 'percentage';
+            const platformFeeValue = Number(
+                o.platformFeeValue ?? o.platform_fee_value ?? 0
+            );
+            const shippingAmount = Number(
+                o.shippingAmount ?? o.shipping ?? o.shippingCost ?? 0
+            );
+            const canDeposit = Number(o.canDeposit) || 0;
+            const itemsTotal = Array.isArray(o.items)
+                ? o.items.reduce(
+                      (n, it) =>
+                        n + (Number(it.price) || 0) * (Number(it.qty) || 0),
+                      0
+                  )
+                : Number(o.itemsTotal) || 0;
+            const total =
+                Number(o.total) ||
+                itemsTotal + shippingAmount + canDeposit + platformFee;
+            return {
+                ...o,
+                itemsTotal,
+                shippingAmount,
+                canDeposit,
+                platformFeeEnabled,
+                platformFeeType,
+                platformFeeValue,
+                platformFee,
+                total,
+            };
         });
-        if (newStatus === 'Delivered') {
-            orders[index].deliveredAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            if (orders[index].paymentMode === 'COD') {
-                orders[index].paymentStatus = 'Paid';
-            }
+        let record = await SupplierOrder.findOne({ where: { userId } });
+        if (!record) {
+            record = await SupplierOrder.create({ userId, orders: normalized });
+        } else {
+            record.orders = normalized;
+            record.changed('orders', true);
+            await record.save();
         }
-        supplierOrder.orders = orders;
-        supplierOrder.changed('orders', true);
-        await supplierOrder.save();
-        return orders[index];
+        return normalized;
     }
 }
 module.exports = new SupplierOrderService();

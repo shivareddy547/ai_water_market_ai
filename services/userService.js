@@ -16,10 +16,27 @@ class UserService {
             order: [['created_at', 'DESC']]
         });
     }
-    async getSuppliers() {
-        return await User.findAll({
+    async getSuppliers(pincode = null) {
+        const suppliers = await User.findAll({
             where: { role: 'supplier' },
             order: [['created_at', 'DESC']]
+        });
+        if (!pincode || !String(pincode).trim()) {
+            return suppliers;
+        }
+        const pin = String(pincode).trim();
+        return suppliers.filter(supplier => {
+            const warehouseAddresses = supplier.warehouseAddresses || [];
+            if (!Array.isArray(warehouseAddresses) || warehouseAddresses.length === 0) {
+                return false;
+            }
+            return warehouseAddresses.some(wh => {
+                const deliveryPincodes = wh.deliveryPincodes || [];
+                if (deliveryPincodes.length > 0) {
+                    return deliveryPincodes.includes(pin);
+                }
+                return wh.pincode === pin;
+            });
         });
     }
     async getFeaturedSuppliers() {

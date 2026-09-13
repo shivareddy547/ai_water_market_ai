@@ -20,7 +20,8 @@ class UserController {
     }
     async getSuppliers(req, res, next) {
         try {
-            const users = await userService.getSuppliers();
+            const pincode = req.query.pincode || null;
+            const users = await userService.getSuppliers(pincode);
             res.json({ success: true, data: users });
         } catch (err) {
             next(err);

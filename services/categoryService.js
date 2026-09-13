@@ -13,21 +13,30 @@ class CategoryService {
         const categories = await Category.findAll({
             order: [['position', 'ASC']]
         });
-        const categoriesWithCounts = await Promise.all(
-            categories.map(async (cat) => {
-                const productCount = await Product.count({
-                    where: {
-                        categoryId: cat.id,
-                        status: 'active'
-                    }
-                });
-                return {
-                    ...cat.toJSON(),
-                    count: productCount
-                };
-            })
-        );
-        return categoriesWithCounts;
+        if (categories.length === 0) {
+            return [];
+        }
+        const countRows = await Product.findAll({
+            attributes: [
+                'categoryId',
+                [Product.sequelize.fn('COUNT', Product.sequelize.col('id')), 'count']
+            ],
+            where: {
+                status: 'active'
+            },
+            group: ['categoryId'],
+            raw: true
+        });
+        const countMap = {};
+        countRows.forEach(row => {
+            if (row.categoryId) {
+                countMap[row.categoryId] = Number(row.count) || 0;
+            }
+        });
+        return categories.map(cat => ({
+            ...cat.toJSON(),
+            count: countMap[cat.id] || 0
+        }));
     }
     async createCategory(data) {
         const { name, icon, image, position, permalink } = data;

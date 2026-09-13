@@ -30,7 +30,8 @@ class UserService {
                 verificationStatus: 'verified',
                 isActive: true
             },
-            order: [['created_at', 'DESC']]
+            order: [['created_at', 'DESC']],
+            limit: 8
         });
     }
     async updateUserActive(id, isActive) {

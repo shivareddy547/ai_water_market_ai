@@ -1,32 +1,31 @@
-'use strict';
 const { Setting } = require('../models');
-class SettingService {
-    async getSetting(key) {
-        if (!key) {
-            const err = new Error('Setting key is required');
-            err.status = 400;
-            throw err;
-        }
+const getSetting = async (key) => {
+    try {
         const setting = await Setting.findOne({ where: { key } });
-        if (!setting) {
-            return { value: {} };
-        }
         return setting;
+    } catch (error) {
+        const err = new Error('Failed to fetch setting');
+        err.status = 500;
+        throw err;
     }
-    async updateSetting(key, value) {
-        if (!key) {
-            const err = new Error('Setting key is required');
-            err.status = 400;
-            throw err;
-        }
+};
+const upsertSetting = async (key, value) => {
+    try {
         let setting = await Setting.findOne({ where: { key } });
-        if (!setting) {
-            setting = await Setting.create({ key, value: value || {} });
-        } else {
-            setting.value = value || {};
+        if (setting) {
+            setting.value = value;
             await setting.save();
+            return setting;
         }
+        setting = await Setting.create({ key, value });
         return setting;
+    } catch (error) {
+        const err = new Error('Failed to save setting');
+        err.status = 500;
+        throw err;
     }
-}
-module.exports = new SettingService();
+};
+module.exports = {
+    getSetting,
+    upsertSetting
+};

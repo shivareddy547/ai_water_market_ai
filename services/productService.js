@@ -35,146 +35,165 @@ const decorateSupplier = (item) => {
   item.supplierName =
     storeName ||
     fullName ||
-    `Supplier #${(
-      item.supplierId || ''
-    )
-      .slice(-6)
-      .toUpperCase()}`;
+    `Supplier #${(item.supplierId || '').slice(-6).toUpperCase()}`;
 
   const feeEnabled =
-    u.platform_fee_enabled ??
-    u.platformFeeEnabled;
+    u.platform_fee_enabled ?? u.platformFeeEnabled;
 
   const feeType =
-    u.platform_fee_type ??
-    u.platformFeeType;
+    u.platform_fee_type ?? u.platformFeeType;
 
   const feeValue =
-    u.platform_fee_value ??
-    u.platformFeeValue;
+    u.platform_fee_value ?? u.platformFeeValue;
 
-  item.supplierPlatformFeeEnabled =
-    !!feeEnabled;
+  item.supplierPlatformFeeEnabled = !!feeEnabled;
 
   item.supplierPlatformFeeType =
-    feeType === 'flat'
-      ? 'flat'
-      : 'percentage';
+    feeType === 'flat' ? 'flat' : 'percentage';
 
-  item.supplierPlatformFeeValue =
-    Number(feeValue || 0);
+  item.supplierPlatformFeeValue = Number(feeValue || 0);
 
   return item;
 };
 
-const parsePositiveInteger = (
-  value,
-  fallback
-) => {
-  const parsed = Number.parseInt(
-    String(value),
-    10
-  );
+const parsePositiveInteger = (value, fallback) => {
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
 
-  return Number.isInteger(parsed) &&
-    parsed > 0
-    ? parsed
-    : fallback;
+const matchesPincode = (product, pincode) => {
+  const warehouseIds = product.warehouseIds || [];
+  const warehouseAddresses =
+    (product.user && product.user.warehouseAddresses) || [];
+  if (warehouseIds.length === 0) {
+    return false;
+  }
+  return warehouseAddresses.some((wh) => {
+    if (!warehouseIds.includes(wh.id)) {
+      return false;
+    }
+    const deliveryPincodes = wh.deliveryPincodes || [];
+    if (deliveryPincodes.length > 0) {
+      return deliveryPincodes.includes(pincode);
+    }
+    return wh.pincode === pincode;
+  });
 };
 
 class ProductService {
   async getAllActiveProducts(query = {}) {
-    const where = {
-      status: 'active'
-    };
+    const where = { status: 'active' };
 
-    if (
-      query.categoryId &&
-      query.categoryId !== 'all'
-    ) {
-      where.categoryId =
-        query.categoryId;
+    if (query.categoryId && query.categoryId !== 'all') {
+      where.categoryId = query.categoryId;
     }
 
     const hasPagination =
-      query.page !== undefined ||
-      query.limit !== undefined;
+      query.page !== undefined || query.limit !== undefined;
 
-    if (!hasPagination) {
-      const products =
-        await Product.findAll({
-          where,
-          include: [
-            {
-              model: User,
-              as: 'user',
-              attributes:
-                SUPPLIER_ATTRS
-            }
-          ],
-          order: [
-            ['created_at', 'DESC']
-          ]
-        });
+    const pincode =
+      query.pincode && String(query.pincode).trim()
+        ? String(query.pincode).trim()
+        : null;
 
-      return products.map(product =>
-        decorateSupplier(
-          product.toJSON()
-        )
-      );
-    }
-
-    const page =
-      parsePositiveInteger(
-        query.page,
-        1
-      );
-
-    const limit = Math.min(
-      parsePositiveInteger(
-        query.limit,
-        10
-      ),
-      100
-    );
-
-    const offset =
-      (page - 1) * limit;
-
-    const result =
-      await Product.findAndCountAll({
+    // If pincode filter is provided, fetch all matching products first,
+    // filter by warehouse delivery pincodes, then paginate manually.
+    if (pincode) {
+      const allProducts = await Product.findAll({
         where,
         include: [
           {
             model: User,
             as: 'user',
-            attributes:
-              SUPPLIER_ATTRS
+            attributes: SUPPLIER_ATTRS
           }
         ],
-        order: [
-          ['created_at', 'DESC'],
-          ['id', 'DESC']
-        ],
-        limit,
-        offset,
-        distinct: true
+        order: [['created_at', 'DESC'], ['id', 'DESC']]
       });
+
+      const decorated = allProducts.map((product) =>
+        decorateSupplier(product.toJSON())
+      );
+
+      const filtered = decorated.filter((product) =>
+        matchesPincode(product, pincode)
+      );
+
+      if (!hasPagination) {
+        return filtered;
+      }
+
+      const page = parsePositiveInteger(query.page, 1);
+      const limit = Math.min(
+        parsePositiveInteger(query.limit, 10),
+        100
+      );
+      const offset = (page - 1) * limit;
+      const total = filtered.length;
+      const totalPages =
+        total === 0 ? 0 : Math.ceil(total / limit);
+      const products = filtered.slice(offset, offset + limit);
+
+      return {
+        products,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1
+        }
+      };
+    }
+
+    if (!hasPagination) {
+      const products = await Product.findAll({
+        where,
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: SUPPLIER_ATTRS
+          }
+        ],
+        order: [['created_at', 'DESC']]
+      });
+
+      return products.map((product) =>
+        decorateSupplier(product.toJSON())
+      );
+    }
+
+    const page = parsePositiveInteger(query.page, 1);
+    const limit = Math.min(
+      parsePositiveInteger(query.limit, 10),
+      100
+    );
+    const offset = (page - 1) * limit;
+
+    const result = await Product.findAndCountAll({
+      where,
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: SUPPLIER_ATTRS
+        }
+      ],
+      order: [['created_at', 'DESC'], ['id', 'DESC']],
+      limit,
+      offset,
+      distinct: true
+    });
 
     const total = result.count;
     const totalPages =
-      total === 0
-        ? 0
-        : Math.ceil(
-            total / limit
-          );
+      total === 0 ? 0 : Math.ceil(total / limit);
 
-    const products =
-      result.rows.map(product =>
-        decorateSupplier(
-          product.toJSON()
-        )
-      );
+    const products = result.rows.map((product) =>
+      decorateSupplier(product.toJSON())
+    );
 
     return {
       products,
@@ -183,10 +202,8 @@ class ProductService {
         limit,
         total,
         totalPages,
-        hasNextPage:
-          page < totalPages,
-        hasPreviousPage:
-          page > 1
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1
       }
     };
   }
@@ -197,88 +214,55 @@ class ProductService {
       isPopular: true
     };
 
-    const products =
-      await Product.findAll({
-        where,
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes:
-              SUPPLIER_ATTRS
-          }
-        ],
-        order: [
-          ['created_at', 'DESC']
-        ]
-      });
+    const products = await Product.findAll({
+      where,
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: SUPPLIER_ATTRS
+        }
+      ],
+      order: [['created_at', 'DESC']]
+    });
 
-    return products.map(product =>
-      decorateSupplier(
-        product.toJSON()
-      )
+    return products.map((product) =>
+      decorateSupplier(product.toJSON())
     );
   }
 
   async getAllProducts() {
-    const products =
-      await Product.findAll({
-        include: [
-          {
-            model: User,
-            as: 'user',
-            attributes:
-              SUPPLIER_ATTRS
-          }
-        ],
-        order: [
-          ['created_at', 'DESC']
-        ]
-      });
+    const products = await Product.findAll({
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: SUPPLIER_ATTRS
+        }
+      ],
+      order: [['created_at', 'DESC']]
+    });
 
-    return products.map(product =>
-      decorateSupplier(
-        product.toJSON()
-      )
+    return products.map((product) =>
+      decorateSupplier(product.toJSON())
     );
   }
 
-  async getProductsByUser(
-    userId
-  ) {
+  async getProductsByUser(userId) {
     return await Product.findAll({
-      where: {
-        userId
-      },
-      order: [
-        ['created_at', 'DESC']
-      ]
+      where: { userId },
+      order: [['created_at', 'DESC']]
     });
   }
 
-  async getProductById(
-    id,
-    userId,
-    userRole
-  ) {
+  async getProductById(id, userId, userRole) {
     const where =
-      userRole === 'admin'
-        ? { id }
-        : {
-            id,
-            userId
-          };
+      userRole === 'admin' ? { id } : { id, userId };
 
-    const product =
-      await Product.findOne({
-        where
-      });
+    const product = await Product.findOne({ where });
 
     if (!product) {
-      const err = new Error(
-        'Product not found'
-      );
-
+      const err = new Error('Product not found');
       err.status = 404;
       throw err;
     }
@@ -286,10 +270,7 @@ class ProductService {
     return product;
   }
 
-  async createProduct(
-    userId,
-    data
-  ) {
+  async createProduct(userId, data) {
     const {
       name,
       brand,
@@ -304,10 +285,7 @@ class ProductService {
     } = data;
 
     if (!name) {
-      const err = new Error(
-        'Product name is required'
-      );
-
+      const err = new Error('Product name is required');
       err.status = 400;
       throw err;
     }
@@ -316,47 +294,27 @@ class ProductService {
       userId,
       name,
       brand: brand || '',
-      categoryId:
-        categoryId || null,
-      description:
-        description || '',
+      categoryId: categoryId || null,
+      description: description || '',
       images: images || [],
       videos: videos || [],
-      status:
-        status || 'draft',
-      isPopular:
-        isPopular === true,
-      warehouseIds:
-        warehouseIds || [],
-      variants:
-        variants || []
+      status: status || 'draft',
+      isPopular: isPopular === true,
+      warehouseIds: warehouseIds || [],
+      variants: variants || []
     });
   }
 
-  async updateProduct(
-    id,
-    userId,
-    data,
-    userRole
-  ) {
+  async updateProduct(id, userId, data, userRole) {
     const where =
-      userRole === 'admin'
-        ? { id }
-        : {
-            id,
-            userId
-          };
+      userRole === 'admin' ? { id } : { id, userId };
 
-    const product =
-      await Product.findOne({
-        where
-      });
+    const product = await Product.findOne({ where });
 
     if (!product) {
       const err = new Error(
         'Product not found or you do not have permission to update it'
       );
-
       err.status = 404;
       throw err;
     }
@@ -374,76 +332,44 @@ class ProductService {
       variants
     } = data;
 
-    if (
-      name !== undefined
-    ) {
+    if (name !== undefined) {
       product.name = name;
     }
 
-    if (
-      brand !== undefined
-    ) {
+    if (brand !== undefined) {
       product.brand = brand;
     }
 
-    if (
-      categoryId !==
-      undefined
-    ) {
-      product.categoryId =
-        categoryId;
+    if (categoryId !== undefined) {
+      product.categoryId = categoryId;
     }
 
-    if (
-      description !==
-      undefined
-    ) {
-      product.description =
-        description;
+    if (description !== undefined) {
+      product.description = description;
     }
 
-    if (
-      images !== undefined
-    ) {
-      product.images =
-        images;
+    if (images !== undefined) {
+      product.images = images;
     }
 
-    if (
-      videos !== undefined
-    ) {
-      product.videos =
-        videos;
+    if (videos !== undefined) {
+      product.videos = videos;
     }
 
-    if (
-      status !== undefined
-    ) {
-      product.status =
-        status;
+    if (status !== undefined) {
+      product.status = status;
     }
 
-    if (
-      isPopular !==
-      undefined
-    ) {
-      product.isPopular =
-        isPopular === true;
+    if (isPopular !== undefined) {
+      product.isPopular = isPopular === true;
     }
 
-    if (
-      warehouseIds !==
-      undefined
-    ) {
-      product.warehouseIds =
-        warehouseIds;
+    if (warehouseIds !== undefined) {
+      product.warehouseIds = warehouseIds;
     }
 
-    if (
-      variants !== undefined
-    ) {
-      product.variants =
-        variants;
+    if (variants !== undefined) {
+      product.variants = variants;
     }
 
     await product.save();
@@ -451,41 +377,24 @@ class ProductService {
     return product;
   }
 
-  async deleteProduct(
-    id,
-    userId,
-    userRole
-  ) {
+  async deleteProduct(id, userId, userRole) {
     const where =
-      userRole === 'admin'
-        ? { id }
-        : {
-            id,
-            userId
-          };
+      userRole === 'admin' ? { id } : { id, userId };
 
-    const product =
-      await Product.findOne({
-        where
-      });
+    const product = await Product.findOne({ where });
 
     if (!product) {
       const err = new Error(
         'Product not found or you do not have permission to delete it'
       );
-
       err.status = 404;
       throw err;
     }
 
     await product.destroy();
 
-    return {
-      message:
-        'Product deleted successfully'
-    };
+    return { message: 'Product deleted successfully' };
   }
 }
 
-module.exports =
-  new ProductService();
+module.exports = new ProductService();

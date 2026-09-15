@@ -2,6 +2,56 @@
 const { Provider, User } = require('../models');
 const { Op } = require('sequelize');
 class ProviderService {
+    async getPublicPaymentProviders() {
+        try {
+            const providers = await Provider.findAll({
+                where: {
+                    providerType: 'payment',
+                    isEnabled: true
+                },
+                include: [
+                    {
+                        model: User,
+                        as: 'user',
+                        attributes: ['id', 'first_name', 'last_name', 'store_name', 'role']
+                    }
+                ],
+                order: [['created_at', 'DESC']]
+            });
+            return providers.map(p => {
+                const data = p.toJSON();
+                const creds = data.credentials || {};
+                return {
+                    id: data.id,
+                    name: data.name,
+                    providerKey: data.providerKey,
+                    providerType: data.providerType,
+                    isEnabled: data.isEnabled,
+                    targetType: data.targetType,
+                    targetRole: data.targetRole,
+                    userId: data.userId,
+                    targetUser: data.user ? {
+                        id: data.user.id,
+                        firstName: data.user.first_name || data.user.firstName,
+                        lastName: data.user.last_name || data.user.lastName,
+                        storeName: data.user.store_name || data.user.storeName,
+                        role: data.user.role
+                    } : null,
+                    displayLabel: creds.display_label || data.name,
+                    instructions: creds.instructions || '',
+                    minOrderAmount: creds.min_order_amount ? Number(creds.min_order_amount) : 0,
+                    maxOrderAmount: creds.max_order_amount ? Number(creds.max_order_amount) : 0,
+                    extraCharge: creds.extra_charge ? Number(creds.extra_charge) : 0,
+                    environment: creds.environment || 'production'
+                };
+            });
+        } catch (error) {
+            console.error('Error fetching public payment providers:', error);
+            const err = new Error('Failed to fetch payment providers');
+            err.status = 500;
+            throw err;
+        }
+    }
     async getAllProviders(user) {
         try {
             const where = {};

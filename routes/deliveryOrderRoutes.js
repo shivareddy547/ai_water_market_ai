@@ -4,5 +4,5 @@ const router = express.Router();
 const deliveryOrderController = require('../controllers/deliveryOrderController');
 const authMiddleware = require('../middleware/authMiddleware');
 router.get('/assigned', authMiddleware, deliveryOrderController.getAssignedOrders);
-router.put('/status/:id', authMiddleware, deliveryOrderController.updateStatus);
+router.put('/:orderId/status', authMiddleware, deliveryOrderController.updateOrderStatus);
 module.exports = router;

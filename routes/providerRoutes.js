@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const providerController = require('../controllers/providerController');
 const authMiddleware = require('../middleware/authMiddleware');
+router.get('/public/payments', providerController.getPublicPayments);
 router.get('/', authMiddleware, providerController.getAll);
 router.get('/:id', authMiddleware, providerController.getById);
 router.post('/', authMiddleware, providerController.create);

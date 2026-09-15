@@ -13,23 +13,25 @@ class DeliveryOrderController {
             next(error);
         }
     }
-    async updateStatus(req, res, next) {
+    async updateOrderStatus(req, res, next) {
         try {
-            const { id } = req.params;
-            const { status, proofImage, proofComment } = req.body;
+            const { orderId } = req.params;
+            const { status, reason, proofImage } = req.body;
             if (!status) {
                 const err = new Error('Status is required');
                 err.status = 400;
                 throw err;
             }
-            const order = await deliveryOrderService.updateOrderStatus(id, req.user.id, { 
+            const updatedOrder = await deliveryOrderService.updateOrderStatus(
+                req.user.id, 
+                orderId, 
                 status, 
-                proofImage, 
-                proofComment 
-            });
+                reason, 
+                proofImage
+            );
             res.status(200).json({
                 success: true,
-                data: order,
+                data: updatedOrder,
                 message: 'Order status updated successfully'
             });
         } catch (error) {

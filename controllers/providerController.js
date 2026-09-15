@@ -1,6 +1,18 @@
 'use strict';
 const providerService = require('../services/providerService');
 class ProviderController {
+    async getPublicPayments(req, res, next) {
+        try {
+            const providers = await providerService.getPublicPaymentProviders();
+            res.status(200).json({
+                success: true,
+                data: providers,
+                message: 'Payment providers fetched successfully'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
     async getAll(req, res, next) {
         try {
             const providers = await providerService.getAllProviders(req.user);

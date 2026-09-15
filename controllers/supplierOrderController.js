@@ -4,24 +4,31 @@ class SupplierOrderController {
     async getOrders(req, res, next) {
         try {
             const orders = await supplierOrderService.getOrders(req.user.id);
-            res.json({ success: true, data: orders });
-        } catch (err) {
-            next(err);
+            res.status(200).json({
+                success: true,
+                data: orders,
+                message: 'Orders fetched successfully'
+            });
+        } catch (error) {
+            next(error);
         }
     }
-    async saveOrders(req, res, next) {
+    async updateOrders(req, res, next) {
         try {
-            const orders = await supplierOrderService.saveOrders(
-                req.user.id,
-                req.body.orders
-            );
-            res.json({
+            const { orders } = req.body;
+            if (!Array.isArray(orders)) {
+                const err = new Error('Orders must be an array');
+                err.status = 400;
+                throw err;
+            }
+            const updatedOrders = await supplierOrderService.updateOrders(req.user.id, orders);
+            res.status(200).json({
                 success: true,
-                message: 'Orders saved successfully',
-                data: orders,
+                data: updatedOrders,
+                message: 'Orders saved successfully'
             });
-        } catch (err) {
-            next(err);
+        } catch (error) {
+            next(error);
         }
     }
 }

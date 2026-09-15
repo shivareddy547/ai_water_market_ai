@@ -1,0 +1,12 @@
+'use strict';
+const express = require('express');
+const router = express.Router();
+const providerController = require('../controllers/providerController');
+const authMiddleware = require('../middleware/authMiddleware');
+router.get('/', authMiddleware, providerController.getAll);
+router.get('/:id', authMiddleware, providerController.getById);
+router.post('/', authMiddleware, providerController.create);
+router.put('/:id', authMiddleware, providerController.update);
+router.patch('/:id/toggle', authMiddleware, providerController.toggle);
+router.delete('/:id', authMiddleware, providerController.remove);
+module.exports = router;

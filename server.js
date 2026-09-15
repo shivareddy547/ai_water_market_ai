@@ -37,6 +37,7 @@ app.use('/api/reviews', require('./routes/reviewRoutes'));
 app.use('/api/subscriptions', require('./routes/subscriptionRoutes'));
 app.use('/api/cron-job', require('./routes/cronJobRoutes'));
 app.use('/api/chat', require('./routes/chatRoutes'));
+app.use('/api/providers', require('./routes/providerRoutes'));
 // Sitemap route (public)
 app.use('/sitemap.xml', require('./routes/sitemapRoutes'));
 // Serve Swagger UI from public folder with cache control

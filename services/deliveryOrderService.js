@@ -244,9 +244,12 @@ class DeliveryOrderService {
             const amountInPaise = Math.round(Number(order.total || 0) * 100);
             const merchantOrderId = `${order.id}-${Date.now()}`;
             const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+            // Format item details for the description
+            const itemSummary = order.items.map(i => `${i.name} x${i.qty}`).join(', ');
+            const description = `Order ${order.id}: ${itemSummary}`.substring(0, 255);
             const payRequestBody = {
                 merchantOrderId: merchantOrderId,
-                description: `Payment for Order ${order.id}`,
+                description: description,
                 amount: amountInPaise,
                 paymentFlow: {
                     type: 'PAYLINK',
@@ -264,7 +267,8 @@ class DeliveryOrderService {
                 metaInfo: {
                     udf1: 'AI_WATER_MARKET',
                     udf2: order.id,
-                    udf3: supplierId
+                    udf3: supplierId,
+                    udf4: itemSummary
                 }
             };
             let paymentLink;
@@ -289,7 +293,6 @@ class DeliveryOrderService {
             order.paymentMerchantOrderId = merchantOrderId;
             const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const by = `${deliveryUser.firstName} ${deliveryUser.lastName}`.trim();
-            // Add to payment attempts
             order.paymentAttempts = [...(order.paymentAttempts || []), {
                 status: 'Link Generated',
                 amount: order.total,

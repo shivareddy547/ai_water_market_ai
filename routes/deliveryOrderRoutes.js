@@ -5,4 +5,6 @@ const deliveryOrderController = require('../controllers/deliveryOrderController'
 const authMiddleware = require('../middleware/authMiddleware');
 router.get('/assigned', authMiddleware, deliveryOrderController.getAssignedOrders);
 router.put('/:orderId/status', authMiddleware, deliveryOrderController.updateOrderStatus);
+router.put('/:orderId/payment', authMiddleware, deliveryOrderController.updateOrderPayment);
+router.post('/:orderId/generate-payment-link', authMiddleware, deliveryOrderController.generatePaymentLink);
 module.exports = router;

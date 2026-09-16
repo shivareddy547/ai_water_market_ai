@@ -78,6 +78,12 @@ class DeliveryOrderService {
             const order = orders[orderIndex];
             const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const by = personName || deliveryUser.firstName;
+            // Prevent delivery if payment is pending for COD
+            if (newStatus === 'Delivered' && order.paymentMode === 'COD' && order.paymentStatus !== 'Paid') {
+                const err = new Error('Please update payment status to Paid before completing delivery');
+                err.status = 400;
+                throw err;
+            }
             // Validate requirement ONLY for specific statuses
             const requiresProof = ['Delivered', 'Cancelled', 'Returned'].includes(newStatus);
             if (requiresProof && !proofImage && !reason) {
@@ -97,7 +103,6 @@ class DeliveryOrderService {
                 order.deliveredAt = nowTime;
                 order.proofImage = proofImage || null;
                 order.proofComment = reason || null;
-                if (order.paymentMode === 'COD') order.paymentStatus = 'Paid';
             } else if (['Customer Not Available', 'Returned', 'Cancelled'].includes(newStatus)) {
                 order.failedReason = reason || null;
             }
@@ -109,6 +114,55 @@ class DeliveryOrderService {
         } catch (error) {
             console.error('Error updating order status:', error);
             const err = new Error(error.message || 'Failed to update order status');
+            err.status = error.status || 500;
+            throw err;
+        }
+    }
+    async updateOrderPayment(userId, orderId, paymentStatus, amountCollected = 0, proofImage = null, reason = null) {
+        try {
+            const deliveryUser = await User.findByPk(userId);
+            if (!deliveryUser || deliveryUser.role !== 'delivery' || !deliveryUser.supplierId) {
+                const err = new Error('Unauthorized or not linked to a supplier');
+                err.status = 403;
+                throw err;
+            }
+            const supplierId = deliveryUser.supplierId;
+            const supplierOrder = await SupplierOrder.findOne({ where: { userId: supplierId } });
+            if (!supplierOrder || !supplierOrder.orders) {
+                const err = new Error('No orders found for this supplier');
+                err.status = 404;
+                throw err;
+            }
+            const orders = supplierOrder.orders;
+            const orderIndex = orders.findIndex(o => o.id === orderId);
+            if (orderIndex === -1) {
+                const err = new Error('Order not found');
+                err.status = 404;
+                throw err;
+            }
+            const order = orders[orderIndex];
+            const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const by = `${deliveryUser.firstName} ${deliveryUser.lastName}`.trim();
+            order.paymentStatus = paymentStatus;
+            order.amountCollected = paymentStatus === 'Paid' ? amountCollected : 0;
+            order.paymentProofImage = proofImage;
+            order.paymentReason = reason;
+            const historyEntry = { 
+                status: `Payment ${paymentStatus}`, 
+                time: nowTime, 
+                by,
+                reason: `Amount: ${amountCollected}. ${reason || ''}`
+            };
+            if (proofImage) historyEntry.proofImage = proofImage;
+            order.statusHistory = [...(order.statusHistory || []), historyEntry];
+            orders[orderIndex] = order;
+            supplierOrder.orders = orders;
+            supplierOrder.changed('orders', true);
+            await supplierOrder.save();
+            return order;
+        } catch (error) {
+            console.error('Error updating order payment:', error);
+            const err = new Error(error.message || 'Failed to update payment');
             err.status = error.status || 500;
             throw err;
         }

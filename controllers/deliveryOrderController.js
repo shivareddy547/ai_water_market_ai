@@ -38,5 +38,46 @@ class DeliveryOrderController {
             next(error);
         }
     }
+    async updateOrderPayment(req, res, next) {
+        try {
+            const { orderId } = req.params;
+            const { paymentStatus, amountCollected, proofImage, reason } = req.body;
+            if (!paymentStatus) {
+                const err = new Error('Payment status is required');
+                err.status = 400;
+                throw err;
+            }
+            const updatedOrder = await deliveryOrderService.updateOrderPayment(
+                req.user.id, 
+                orderId, 
+                paymentStatus, 
+                amountCollected, 
+                proofImage, 
+                reason
+            );
+            res.status(200).json({
+                success: true,
+                data: updatedOrder,
+                message: 'Payment status updated successfully'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+    async generatePaymentLink(req, res, next) {
+        try {
+            const { orderId } = req.params;
+            // In a real app, integrate with Razorpay/Stripe here
+            // For now, we return a dummy link
+            const paymentLink = `https://pay.example.com/order/${orderId}?amount=${req.body.amount || 0}`;
+            res.status(200).json({
+                success: true,
+                data: { paymentLink },
+                message: 'Payment link generated successfully'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 module.exports = new DeliveryOrderController();

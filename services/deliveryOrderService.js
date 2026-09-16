@@ -19,7 +19,7 @@ class DeliveryOrderService {
             if (!supplierOrder || !supplierOrder.orders) {
                 return [];
             }
-            let personId = userId; // Default to user ID
+            let personId = userId;
             const personName = `${deliveryUser.firstName} ${deliveryUser.lastName}`.trim();
             const supplierTeam = await DeliveryTeam.findOne({ where: { userId: supplierId } });
             if (supplierTeam && supplierTeam.data && Array.isArray(supplierTeam.data.persons)) {
@@ -140,6 +140,14 @@ class DeliveryOrderService {
             order.amountCollected = paymentStatus === 'Paid' ? amountCollected : 0;
             order.paymentProofImage = proofImage;
             order.paymentReason = reason;
+            // Add to payment attempts
+            order.paymentAttempts = [...(order.paymentAttempts || []), {
+                status: paymentStatus,
+                amount: amountCollected,
+                time: nowTime,
+                mode: 'Manual Update',
+                reason: reason || 'Cash/UPI Collected'
+            }];
             const historyEntry = { 
                 status: `Payment ${paymentStatus}`, 
                 time: nowTime, 
@@ -183,12 +191,11 @@ class DeliveryOrderService {
                 throw err;
             }
             const order = orders[orderIndex];
-            // Find Payment Provider configured for this supplier or role 'supplier'
             const provider = await Provider.findOne({
                 where: {
                     providerType: 'payment',
                     isEnabled: true,
-                    providerKey: 'phonepe', // Specifically look for PhonePe
+                    providerKey: 'phonepe',
                     [Op.or]: [
                         { userId: supplierId },
                         { targetType: 'role', targetRole: 'supplier' }
@@ -218,7 +225,6 @@ class DeliveryOrderService {
             const payUrl = isSandbox 
                 ? 'https://api-preprod.phonepe.com/apis/pg-sandbox/paylinks/v1/pay' 
                 : 'https://api.phonepe.com/apis/pg/paylinks/v1/pay';
-            // 1. Generate OAuth Token
             const tokenParams = new URLSearchParams();
             tokenParams.append('client_id', clientId);
             tokenParams.append('client_version', clientVersion);
@@ -235,9 +241,9 @@ class DeliveryOrderService {
                 throw new Error('Failed to authenticate with PhonePe.');
             }
             if (!accessToken) throw new Error('Failed to retrieve access token from PhonePe.');
-            // 2. Create Payment Link
             const amountInPaise = Math.round(Number(order.total || 0) * 100);
             const merchantOrderId = `${order.id}-${Date.now()}`;
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
             const payRequestBody = {
                 merchantOrderId: merchantOrderId,
                 description: `Payment for Order ${order.id}`,
@@ -246,13 +252,14 @@ class DeliveryOrderService {
                     type: 'PAYLINK',
                     customerDetails: {
                         name: order.customer || 'Customer',
-                        phoneNumber: (order.phone || '').replace(/\D/g, '').slice(-10) // Ensure 10 digits
+                        phoneNumber: (order.phone || '').replace(/\D/g, '').slice(-10)
                     },
                     notificationChannels: {
                         SMS: true,
                         EMAIL: false
                     },
-                    expireAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours from now
+                    expireAt: Date.now() + 24 * 60 * 60 * 1000,
+                    redirectUrl: `${frontendUrl}/customer/orders`
                 },
                 metaInfo: {
                     udf1: 'AI_WATER_MARKET',
@@ -276,12 +283,21 @@ class DeliveryOrderService {
                 throw new Error('Failed to create PhonePe payment link.');
             }
             if (!paymentLink) throw new Error('PhonePe did not return a payment URL.');
-            // Save to order
             order.paymentLink = paymentLink;
             order.paymentStatus = 'Link Generated';
-            order.paymentRefId = phonepeOrderId; // Store PhonePe Order ID
+            order.paymentRefId = phonepeOrderId;
+            order.paymentMerchantOrderId = merchantOrderId;
             const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const by = `${deliveryUser.firstName} ${deliveryUser.lastName}`.trim();
+            // Add to payment attempts
+            order.paymentAttempts = [...(order.paymentAttempts || []), {
+                status: 'Link Generated',
+                amount: order.total,
+                time: nowTime,
+                refId: phonepeOrderId,
+                merchantOrderId: merchantOrderId,
+                paymentLink: paymentLink
+            }];
             order.statusHistory = [...(order.statusHistory || []), { status: 'Payment Link Generated', time: nowTime, by, reason: paymentLink }];
             orders[orderIndex] = order;
             supplierOrder.orders = orders;
@@ -293,6 +309,105 @@ class DeliveryOrderService {
             const err = new Error(error.message || 'Failed to generate payment link');
             err.status = error.status || 500;
             throw err;
+        }
+    }
+    async checkPaymentStatus(userId, orderId) {
+        try {
+            const deliveryUser = await User.findByPk(userId);
+            if (!deliveryUser || deliveryUser.role !== 'delivery' || !deliveryUser.supplierId) {
+                throw new Error('Unauthorized');
+            }
+            const supplierId = deliveryUser.supplierId;
+            const supplierOrder = await SupplierOrder.findOne({ where: { userId: supplierId } });
+            if (!supplierOrder || !supplierOrder.orders) return;
+            const orders = supplierOrder.orders;
+            const orderIndex = orders.findIndex(o => o.id === orderId);
+            if (orderIndex === -1) return;
+            const order = orders[orderIndex];
+            if (!order.paymentMerchantOrderId) {
+                throw new Error('No payment initiated for this order.');
+            }
+            const provider = await Provider.findOne({
+                where: {
+                    providerType: 'payment',
+                    isEnabled: true,
+                    providerKey: 'phonepe',
+                    [Op.or]: [
+                        { userId: supplierId },
+                        { targetType: 'role', targetRole: 'supplier' }
+                    ]
+                },
+                order: [['created_at', 'DESC']]
+            });
+            if (!provider) throw new Error('PhonePe provider not configured.');
+            const creds = provider.credentials || {};
+            const environment = creds.environment || 'production';
+            const isSandbox = environment === 'sandbox';
+            const tokenUrl = isSandbox 
+                ? 'https://api-preprod.phonepe.com/apis/pg-sandbox/v1/oauth/token' 
+                : 'https://api.phonepe.com/apis/identity-manager/v1/oauth/token';
+            const statusUrl = isSandbox
+                ? `https://api-preprod.phonepe.com/apis/pg-sandbox/paylinks/v1/status/${order.paymentMerchantOrderId}`
+                : `https://api.phonepe.com/apis/pg/paylinks/v1/status/${order.paymentMerchantOrderId}`;
+            const tokenParams = new URLSearchParams();
+            tokenParams.append('client_id', creds.client_id);
+            tokenParams.append('client_version', creds.client_version);
+            tokenParams.append('client_secret', creds.client_secret);
+            tokenParams.append('grant_type', 'client_credentials');
+            const tokenResponse = await axios.post(tokenUrl, tokenParams.toString(), {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+            const accessToken = tokenResponse.data.access_token;
+            const statusResponse = await axios.get(statusUrl, {
+                headers: { 'Authorization': `O-Bearer ${accessToken}` }
+            });
+            const phonepeData = statusResponse.data;
+            const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (phonepeData.state === 'COMPLETED') {
+                order.paymentStatus = 'Paid';
+                order.amountCollected = order.total;
+                order.paymentDetails = phonepeData;
+                order.paymentAttempts = [...(order.paymentAttempts || []), {
+                    status: 'COMPLETED',
+                    amount: phonepeData.amount ? phonepeData.amount / 100 : order.total,
+                    time: nowTime,
+                    transactionId: phonepeData.transactionId,
+                    paymentMode: phonepeData.paymentMode,
+                    refId: phonepeData.orderId
+                }];
+                order.statusHistory = [...(order.statusHistory || []), { 
+                    status: 'Payment Verified', 
+                    time: nowTime, 
+                    by: 'System', 
+                    reason: `Amount: ${order.total}` 
+                }];
+                orders[orderIndex] = order;
+                supplierOrder.orders = orders;
+                supplierOrder.changed('orders', true);
+                await supplierOrder.save();
+                return order;
+            } else if (phonepeData.state === 'FAILED') {
+                order.paymentStatus = 'Failed';
+                order.paymentDetails = phonepeData;
+                order.paymentAttempts = [...(order.paymentAttempts || []), {
+                    status: 'FAILED',
+                    amount: phonepeData.amount ? phonepeData.amount / 100 : order.total,
+                    time: nowTime,
+                    transactionId: phonepeData.transactionId || 'N/A',
+                    paymentMode: phonepeData.paymentMode || 'N/A',
+                    refId: phonepeData.orderId
+                }];
+                orders[orderIndex] = order;
+                supplierOrder.orders = orders;
+                supplierOrder.changed('orders', true);
+                await supplierOrder.save();
+                return order;
+            } else {
+                return order;
+            }
+        } catch (error) {
+            console.error('Error checking payment status:', error.response?.data || error.message);
+            throw new Error(error.response?.data?.message || 'Failed to verify payment status.');
         }
     }
 }

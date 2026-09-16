@@ -7,4 +7,5 @@ router.get('/assigned', authMiddleware, deliveryOrderController.getAssignedOrder
 router.put('/:orderId/status', authMiddleware, deliveryOrderController.updateOrderStatus);
 router.put('/:orderId/payment', authMiddleware, deliveryOrderController.updateOrderPayment);
 router.post('/:orderId/generate-payment-link', authMiddleware, deliveryOrderController.generatePaymentLink);
+router.get('/:orderId/check-payment-status', authMiddleware, deliveryOrderController.checkPaymentStatus);
 module.exports = router;

@@ -77,5 +77,18 @@ class DeliveryOrderController {
             next(error);
         }
     }
+    async checkPaymentStatus(req, res, next) {
+        try {
+            const { orderId } = req.params;
+            const updatedOrder = await deliveryOrderService.checkPaymentStatus(req.user.id, orderId);
+            res.status(200).json({
+                success: true,
+                data: updatedOrder,
+                message: 'Payment status checked successfully'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 module.exports = new DeliveryOrderController();

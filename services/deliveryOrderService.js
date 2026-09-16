@@ -78,12 +78,6 @@ class DeliveryOrderService {
             const order = orders[orderIndex];
             const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const by = personName || deliveryUser.firstName;
-            // Prevent delivery if payment is pending for COD
-            if (newStatus === 'Delivered' && order.paymentMode === 'COD' && order.paymentStatus !== 'Paid') {
-                const err = new Error('Please update payment status to Paid before completing delivery');
-                err.status = 400;
-                throw err;
-            }
             // Validate requirement ONLY for specific statuses
             const requiresProof = ['Delivered', 'Cancelled', 'Returned'].includes(newStatus);
             if (requiresProof && !proofImage && !reason) {
@@ -163,6 +157,48 @@ class DeliveryOrderService {
         } catch (error) {
             console.error('Error updating order payment:', error);
             const err = new Error(error.message || 'Failed to update payment');
+            err.status = error.status || 500;
+            throw err;
+        }
+    }
+    async generatePaymentLink(userId, orderId) {
+        try {
+            const deliveryUser = await User.findByPk(userId);
+            if (!deliveryUser || deliveryUser.role !== 'delivery' || !deliveryUser.supplierId) {
+                const err = new Error('Unauthorized or not linked to a supplier');
+                err.status = 403;
+                throw err;
+            }
+            const supplierId = deliveryUser.supplierId;
+            const supplierOrder = await SupplierOrder.findOne({ where: { userId: supplierId } });
+            if (!supplierOrder || !supplierOrder.orders) {
+                const err = new Error('No orders found for this supplier');
+                err.status = 404;
+                throw err;
+            }
+            const orders = supplierOrder.orders;
+            const orderIndex = orders.findIndex(o => o.id === orderId);
+            if (orderIndex === -1) {
+                const err = new Error('Order not found');
+                err.status = 404;
+                throw err;
+            }
+            const order = orders[orderIndex];
+            // Generate random link for now
+            const paymentLink = `https://pay.watermarket.com/order/${orderId}?ref=${Math.random().toString(36).substring(2, 12)}`;
+            order.paymentLink = paymentLink;
+            order.paymentStatus = 'Link Generated';
+            const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const by = `${deliveryUser.firstName} ${deliveryUser.lastName}`.trim();
+            order.statusHistory = [...(order.statusHistory || []), { status: 'Payment Link Generated', time: nowTime, by, reason: paymentLink }];
+            orders[orderIndex] = order;
+            supplierOrder.orders = orders;
+            supplierOrder.changed('orders', true);
+            await supplierOrder.save();
+            return paymentLink;
+        } catch (error) {
+            console.error('Error generating payment link:', error);
+            const err = new Error(error.message || 'Failed to generate payment link');
             err.status = error.status || 500;
             throw err;
         }

@@ -67,9 +67,7 @@ class DeliveryOrderController {
     async generatePaymentLink(req, res, next) {
         try {
             const { orderId } = req.params;
-            // In a real app, integrate with Razorpay/Stripe here
-            // For now, we return a dummy link
-            const paymentLink = `https://pay.example.com/order/${orderId}?amount=${req.body.amount || 0}`;
+            const paymentLink = await deliveryOrderService.generatePaymentLink(req.user.id, orderId);
             res.status(200).json({
                 success: true,
                 data: { paymentLink },

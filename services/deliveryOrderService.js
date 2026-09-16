@@ -1,5 +1,7 @@
 'use strict';
-const { SupplierOrder, User, DeliveryTeam } = require('../models');
+const { SupplierOrder, User, DeliveryTeam, Provider } = require('../models');
+const { Op } = require('sequelize');
+const axios = require('axios');
 class DeliveryOrderService {
     async getAssignedOrders(userId) {
         try {
@@ -19,7 +21,6 @@ class DeliveryOrderService {
             }
             let personId = userId; // Default to user ID
             const personName = `${deliveryUser.firstName} ${deliveryUser.lastName}`.trim();
-            // Find the matching delivery person in the supplier's team to get their local person ID
             const supplierTeam = await DeliveryTeam.findOne({ where: { userId: supplierId } });
             if (supplierTeam && supplierTeam.data && Array.isArray(supplierTeam.data.persons)) {
                 const person = supplierTeam.data.persons.find(p => {
@@ -32,7 +33,6 @@ class DeliveryOrderService {
                     personId = person.id;
                 }
             }
-            // Filter orders matching the resolved personId
             const assignedOrders = supplierOrder.orders.filter(
                 order => order.deliveryPersonId === personId || order.deliveryPersonId === userId
             );
@@ -78,7 +78,6 @@ class DeliveryOrderService {
             const order = orders[orderIndex];
             const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const by = personName || deliveryUser.firstName;
-            // Validate requirement ONLY for specific statuses
             const requiresProof = ['Delivered', 'Cancelled', 'Returned'].includes(newStatus);
             if (requiresProof && !proofImage && !reason) {
                 const err = new Error('Proof image or reason is required for this status change');
@@ -184,10 +183,103 @@ class DeliveryOrderService {
                 throw err;
             }
             const order = orders[orderIndex];
-            // Generate random link for now
-            const paymentLink = `https://pay.watermarket.com/order/${orderId}?ref=${Math.random().toString(36).substring(2, 12)}`;
+            // Find Payment Provider configured for this supplier or role 'supplier'
+            const provider = await Provider.findOne({
+                where: {
+                    providerType: 'payment',
+                    isEnabled: true,
+                    providerKey: 'phonepe', // Specifically look for PhonePe
+                    [Op.or]: [
+                        { userId: supplierId },
+                        { targetType: 'role', targetRole: 'supplier' }
+                    ]
+                },
+                order: [['created_at', 'DESC']]
+            });
+            if (!provider) {
+                const err = new Error('No active PhonePe payment provider configured for this supplier.');
+                err.status = 400;
+                throw err;
+            }
+            const creds = provider.credentials || {};
+            const clientId = creds.client_id;
+            const clientSecret = creds.client_secret;
+            const clientVersion = creds.client_version;
+            const environment = creds.environment || 'production';
+            if (!clientId || !clientSecret || !clientVersion) {
+                const err = new Error('PhonePe credentials (client_id, client_secret, client_version) are incomplete in admin settings.');
+                err.status = 400;
+                throw err;
+            }
+            const isSandbox = environment === 'sandbox';
+            const tokenUrl = isSandbox 
+                ? 'https://api-preprod.phonepe.com/apis/pg-sandbox/v1/oauth/token' 
+                : 'https://api.phonepe.com/apis/identity-manager/v1/oauth/token';
+            const payUrl = isSandbox 
+                ? 'https://api-preprod.phonepe.com/apis/pg-sandbox/paylinks/v1/pay' 
+                : 'https://api.phonepe.com/apis/pg/paylinks/v1/pay';
+            // 1. Generate OAuth Token
+            const tokenParams = new URLSearchParams();
+            tokenParams.append('client_id', clientId);
+            tokenParams.append('client_version', clientVersion);
+            tokenParams.append('client_secret', clientSecret);
+            tokenParams.append('grant_type', 'client_credentials');
+            let accessToken;
+            try {
+                const tokenResponse = await axios.post(tokenUrl, tokenParams.toString(), {
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                });
+                accessToken = tokenResponse.data.access_token;
+            } catch (err) {
+                console.error('PhonePe Token Error:', err.response?.data || err.message);
+                throw new Error('Failed to authenticate with PhonePe.');
+            }
+            if (!accessToken) throw new Error('Failed to retrieve access token from PhonePe.');
+            // 2. Create Payment Link
+            const amountInPaise = Math.round(Number(order.total || 0) * 100);
+            const merchantOrderId = `${order.id}-${Date.now()}`;
+            const payRequestBody = {
+                merchantOrderId: merchantOrderId,
+                description: `Payment for Order ${order.id}`,
+                amount: amountInPaise,
+                paymentFlow: {
+                    type: 'PAYLINK',
+                    customerDetails: {
+                        name: order.customer || 'Customer',
+                        phoneNumber: (order.phone || '').replace(/\D/g, '').slice(-10) // Ensure 10 digits
+                    },
+                    notificationChannels: {
+                        SMS: true,
+                        EMAIL: false
+                    },
+                    expireAt: Date.now() + 24 * 60 * 60 * 1000 // 24 hours from now
+                },
+                metaInfo: {
+                    udf1: 'AI_WATER_MARKET',
+                    udf2: order.id,
+                    udf3: supplierId
+                }
+            };
+            let paymentLink;
+            let phonepeOrderId;
+            try {
+                const payResponse = await axios.post(payUrl, payRequestBody, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `O-Bearer ${accessToken}`
+                    }
+                });
+                paymentLink = payResponse.data.paylinkUrl;
+                phonepeOrderId = payResponse.data.orderId;
+            } catch (err) {
+                console.error('PhonePe Link Creation Error:', err.response?.data || err.message);
+                throw new Error('Failed to create PhonePe payment link.');
+            }
+            if (!paymentLink) throw new Error('PhonePe did not return a payment URL.');
+            // Save to order
             order.paymentLink = paymentLink;
             order.paymentStatus = 'Link Generated';
+            order.paymentRefId = phonepeOrderId; // Store PhonePe Order ID
             const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const by = `${deliveryUser.firstName} ${deliveryUser.lastName}`.trim();
             order.statusHistory = [...(order.statusHistory || []), { status: 'Payment Link Generated', time: nowTime, by, reason: paymentLink }];

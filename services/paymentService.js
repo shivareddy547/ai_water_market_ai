@@ -247,6 +247,72 @@ class PaymentService {
         }
         return data;
     }
+    // NEW: Auto-generate a fresh PhonePe payment link for an order
+    // when the previous attempt has FAILED. This reuses the same
+    // OAuth/credential resolution as the status API so no new
+    // provider configuration is needed.
+    async _generatePhonePePaymentLink(order, supplierId, cfg, reasonLabel) {
+        const accessToken = await this._getOAuthToken(cfg);
+        const { apiBase } = this._resolveOAuthEndpoints(cfg.environment);
+        const payUrl = `${apiBase}/paylinks/v1/pay`;
+        const amountInPaise = Math.round(Number(order.total || 0) * 100);
+        const merchantOrderId = `${order.id}-${Date.now()}`;
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const itemSummary = (order.items || [])
+            .map(i => `${i.name} x${i.qty}`)
+            .join(', ');
+        const description = `Order ${order.id}: ${itemSummary}`.substring(0, 255);
+        const payRequestBody = {
+            merchantOrderId: merchantOrderId,
+            description: description,
+            amount: amountInPaise,
+            paymentFlow: {
+                type: 'PAYLINK',
+                customerDetails: {
+                    name: order.customer || 'Customer',
+                    phoneNumber: (order.phone || '').replace(/\D/g, '').slice(-10)
+                },
+                notificationChannels: {
+                    SMS: true,
+                    EMAIL: false
+                },
+                expireAt: Date.now() + 24 * 60 * 60 * 1000,
+                redirectUrl: `${frontendUrl}/customer/orders`
+            },
+            metaInfo: {
+                udf1: 'AI_WATER_MARKET',
+                udf2: order.id,
+                udf3: supplierId,
+                udf4: itemSummary
+            }
+        };
+        const res = await fetch(payUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `O-Bearer ${accessToken}`
+            },
+            body: JSON.stringify(payRequestBody)
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = { raw: text }; }
+        if (!res.ok || !data || !data.paylinkUrl) {
+            const err = new Error(
+                data?.message || `PhonePe link generation failed (HTTP ${res.status})`
+            );
+            err.status = 502;
+            err.providerResponse = data;
+            throw err;
+        }
+        return {
+            paymentLink: data.paylinkUrl,
+            phonepeOrderId: data.orderId || null,
+            merchantOrderId,
+            reasonLabel: reasonLabel || 'Auto-regenerated after payment failure',
+            rawResponse: data,
+        };
+    }
     async _callPhonePeStatus(merchantOrderId, supplierId) {
         const cfg = await this._resolvePhonePeConfig(supplierId);
         const hasOAuth = !!(cfg.clientId && cfg.clientSecret);
@@ -305,6 +371,9 @@ class PaymentService {
                     transactionId: targetOrder.transactionId,
                     paymentMode: targetOrder.paymentMode,
                     providerResponse: targetOrder.providerResponse,
+                    paymentLink: targetOrder.paymentLink,
+                    paymentRefId: targetOrder.paymentRefId,
+                    paymentMerchantOrderId: targetOrder.paymentMerchantOrderId,
                 };
                 co.subOrders = subs;
                 co.changed('subOrders', true);
@@ -491,6 +560,51 @@ class PaymentService {
                     },
                 ];
             }
+            // NEW: Auto-generate a fresh payment link after a
+            // failed payment so the customer / delivery person can
+            // retry immediately without leaving the page.
+            try {
+                const cfg = await this._resolvePhonePeConfig(supplierId);
+                const hasOAuth = !!(cfg.clientId && cfg.clientSecret);
+                if (hasOAuth) {
+                    const regenerated = await this._generatePhonePePaymentLink(
+                        targetOrder,
+                        supplierId,
+                        cfg,
+                        'Auto-regenerated after payment failure'
+                    );
+                    targetOrder.paymentLink = regenerated.paymentLink;
+                    targetOrder.paymentStatus = 'Link Generated';
+                    targetOrder.paymentRefId = regenerated.phonepeOrderId;
+                    targetOrder.paymentMerchantOrderId = regenerated.merchantOrderId;
+                    targetOrder.paymentAttempts = [
+                        ...(targetOrder.paymentAttempts || []),
+                        {
+                            status: 'Link Generated',
+                            amount: targetOrder.total,
+                            time: nowTime,
+                            refId: regenerated.phonepeOrderId,
+                            merchantOrderId: regenerated.merchantOrderId,
+                            paymentLink: regenerated.paymentLink,
+                            reason: regenerated.reasonLabel,
+                        },
+                    ];
+                    targetOrder.statusHistory = [
+                        ...(targetOrder.statusHistory || []),
+                        {
+                            status: 'Payment Link Auto-Regenerated',
+                            time: nowTime,
+                            by: 'PhonePe Status API',
+                            reason: `New link after failure: ${regenerated.paymentLink}`,
+                        },
+                    ];
+                }
+            } catch (regenErr) {
+                console.error(
+                    'Failed to auto-generate PhonePe payment link after failure:',
+                    regenErr.message
+                );
+            }
         } else {
             // Still PENDING — do not spam the attempt log with every poll.
             const alreadyLogged = attempts.some(
@@ -526,6 +640,9 @@ class PaymentService {
             amountCollected: targetOrder.amountCollected || 0,
             paymentAttempts: targetOrder.paymentAttempts,
             providerResponse: rawData,
+            paymentLink: targetOrder.paymentLink || null,
+            paymentRefId: targetOrder.paymentRefId || null,
+            paymentMerchantOrderId: targetOrder.paymentMerchantOrderId || null,
         };
     }
     async handlePhonepeWebhook(payload) {
@@ -623,6 +740,9 @@ class PaymentService {
                                 statusHistory: order.statusHistory,
                                 transactionId: order.transactionId,
                                 paymentMode: order.paymentMode,
+                                paymentLink: order.paymentLink,
+                                paymentRefId: order.paymentRefId,
+                                paymentMerchantOrderId: order.paymentMerchantOrderId,
                             };
                             co.subOrders = coSubOrders;
                             co.changed('subOrders', true);

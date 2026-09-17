@@ -2,12 +2,10 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { SupplierOrder, CustomerOrder, Provider } = require('../models');
-
 const DEFAULT_PHONEPE_BASE_URL =
     process.env.PHONEPE_STATUS_BASE_URL ||
     process.env.PHONEPE_BASE_URL ||
     'https://api-preprod.phonepe.com/apis/pg-sandbox';
-
 const pick = (obj, keys) => {
     if (!obj || typeof obj !== 'object') return undefined;
     for (const k of keys) {
@@ -15,11 +13,6 @@ const pick = (obj, keys) => {
     }
     return undefined;
 };
-
-// The admin Payment Providers form stores Standard-Checkout style
-// credentials (client_id / client_secret / client_version), while
-// legacy PhonePe PG v1 uses merchantId / saltKey / saltIndex. Pull
-// out both shapes so the status call can pick the right flow.
 const extractPhonePeCreds = (raw) => {
     if (!raw || typeof raw !== 'object') return {};
     const c =
@@ -29,11 +22,9 @@ const extractPhonePeCreds = (raw) => {
         raw.phonepe_config ||
         raw.credentials ||
         raw;
-
     const clientId = pick(c, ['client_id', 'clientId', 'CLIENT_ID']);
     const clientSecret = pick(c, ['client_secret', 'clientSecret', 'CLIENT_SECRET']);
     const clientVersion = pick(c, ['client_version', 'clientVersion', 'CLIENT_VERSION']);
-
     const merchantId = pick(c, [
         'merchantId', 'merchant_id', 'MERCHANT_ID', 'merchantID', 'merchant',
     ]);
@@ -47,25 +38,27 @@ const extractPhonePeCreds = (raw) => {
         saltIndexRaw !== undefined && saltIndexRaw !== null
             ? String(saltIndexRaw)
             : undefined;
-
     const baseUrl = pick(c, [
         'statusBaseUrl', 'statusUrl', 'statusBaseURL', 'pgBaseUrl',
         'baseUrl', 'baseURL', 'apiUrl', 'host',
     ]);
     const environment = pick(c, ['environment', 'env', 'ENVIRONMENT']);
-
     return {
-        clientId,
-        clientSecret,
-        clientVersion,
-        merchantId,
-        saltKey,
-        saltIndex,
-        baseUrl,
-        environment,
+        clientId, clientSecret, clientVersion,
+        merchantId, saltKey, saltIndex,
+        baseUrl, environment,
     };
 };
-
+// PhonePe returns multiple state dialects. Normalize them all so we
+// don't miss a success/fail because the string changed casing.
+const normalizeState = (s) => String(s || '').toUpperCase().trim();
+const COMPLETED_STATES = new Set(['COMPLETED', 'SUCCESS', 'PAYMENT_SUCCESS', 'PAID']);
+const FAILED_STATES = new Set([
+    'FAILED', 'PAYMENT_ERROR', 'PAYMENT_DECLINED',
+    'PAYMENT_CANCELLED', 'CANCELLED', 'EXPIRED', 'TIMED_OUT',
+]);
+const isCompletedState = (s) => COMPLETED_STATES.has(normalizeState(s));
+const isFailedState = (s) => FAILED_STATES.has(normalizeState(s));
 class PaymentService {
     async _findProviderForSupplier(supplierId) {
         const nameClauses = [
@@ -77,71 +70,45 @@ class PaymentService {
             { name: { [Op.iLike]: '%phonepe%' } },
         ];
         const typeFilter = { providerType: 'payment' };
-
         if (supplierId) {
             const byUser = await Provider.findOne({
                 where: {
-                    isEnabled: true,
-                    ...typeFilter,
+                    isEnabled: true, ...typeFilter,
                     userId: supplierId,
                     [Op.or]: nameClauses,
                 },
             });
             if (byUser) return byUser;
         }
-
         const bySupplierRole = await Provider.findOne({
             where: {
-                isEnabled: true,
-                ...typeFilter,
-                targetType: 'role',
-                targetRole: 'supplier',
+                isEnabled: true, ...typeFilter,
+                targetType: 'role', targetRole: 'supplier',
                 [Op.or]: nameClauses,
             },
         });
         if (bySupplierRole) return bySupplierRole;
-
         const byAnyRole = await Provider.findOne({
             where: {
-                isEnabled: true,
-                ...typeFilter,
+                isEnabled: true, ...typeFilter,
                 targetType: 'role',
                 [Op.or]: nameClauses,
             },
         });
         if (byAnyRole) return byAnyRole;
-
         const byPlatform = await Provider.findOne({
             where: {
-                isEnabled: true,
-                ...typeFilter,
+                isEnabled: true, ...typeFilter,
                 userId: null,
                 [Op.or]: nameClauses,
             },
         });
         if (byPlatform) return byPlatform;
-
-        const anyEnabled = await Provider.findOne({
-            where: {
-                isEnabled: true,
-                ...typeFilter,
-                [Op.or]: nameClauses,
-            },
-            order: [['created_at', 'DESC']],
-        });
-        if (anyEnabled) return anyEnabled;
-
-        // Last resort — a disabled row is still better than nothing,
-        // since the payment link was generated using those creds.
         return await Provider.findOne({
-            where: {
-                ...typeFilter,
-                [Op.or]: nameClauses,
-            },
+            where: { ...typeFilter, [Op.or]: nameClauses },
             order: [['created_at', 'DESC']],
         });
     }
-
     async _resolvePhonePeConfig(supplierId) {
         let baseUrl = DEFAULT_PHONEPE_BASE_URL;
         let merchantId = process.env.PHONEPE_MERCHANT_ID || '';
@@ -151,9 +118,7 @@ class PaymentService {
         let clientSecret = process.env.PHONEPE_CLIENT_SECRET || '';
         let clientVersion = String(process.env.PHONEPE_CLIENT_VERSION || '1');
         let environment = process.env.PHONEPE_ENVIRONMENT || 'sandbox';
-
         const appliedFrom = [];
-
         const provider = await this._findProviderForSupplier(supplierId);
         if (provider && provider.credentials) {
             const creds = extractPhonePeCreds(provider.credentials);
@@ -171,15 +136,12 @@ class PaymentService {
                 `provider(id=${provider.id}, key=${provider.providerKey || provider.name}, target=${provider.targetType}/${provider.targetRole || provider.userId || '-'})`
             );
         }
-
         return {
             baseUrl, merchantId, saltKey, saltIndex,
             clientId, clientSecret, clientVersion, environment,
             appliedFrom, provider,
         };
     }
-
-    // ---- PG v1 (X-VERIFY) flow --------------------------------
     _buildStatusVerifyHash(path, saltKey, saltIndex) {
         const hash = crypto
             .createHash('sha256')
@@ -187,14 +149,12 @@ class PaymentService {
             .digest('hex');
         return `${hash}###${saltIndex}`;
     }
-
     async _callPhonePeStatusV1(merchantOrderId, cfg) {
         const path = `/pg/v1/status/${cfg.merchantId}/${merchantOrderId}`;
         const verifyHash = this._buildStatusVerifyHash(
             path, cfg.saltKey, cfg.saltIndex
         );
         const url = `${String(cfg.baseUrl).replace(/\/$/, '')}${path}`;
-
         const res = await fetch(url, {
             method: 'GET',
             headers: {
@@ -216,15 +176,6 @@ class PaymentService {
         }
         return data;
     }
-
-    // ---- Standard Checkout v2 (OAuth) flow --------------------
-    // Used when the admin Payment Providers form was filled with
-    // client_id / client_secret / client_version. The status
-    // endpoint expects:
-    //   GET /checkout/v2/order/{merchantOrderId}/status
-    //   Authorization: O-Bearer <access_token>
-    // (the "O-" prefix is PhonePe's OAuth bearer scheme — plain
-    //  "Bearer" returns 401).
     _resolveOAuthEndpoints(environment) {
         const env = String(environment || '').toLowerCase();
         const isProd = env === 'production' || env === 'prod' || env === 'live';
@@ -241,7 +192,6 @@ class PaymentService {
             apiBase: 'https://api-preprod.phonepe.com/apis/pg-sandbox',
         };
     }
-
     async _getOAuthToken(cfg) {
         const { authUrl } = this._resolveOAuthEndpoints(cfg.environment);
         const body = new URLSearchParams({
@@ -268,11 +218,14 @@ class PaymentService {
         }
         return data.access_token;
     }
-
     async _callPhonePeStatusV2(merchantOrderId, cfg) {
         const accessToken = await this._getOAuthToken(cfg);
         const { apiBase } = this._resolveOAuthEndpoints(cfg.environment);
-        const url = `${apiBase}/checkout/v2/order/${merchantOrderId}/status`;
+        // FIX: Use the correct PhonePe Payment Link Status API endpoint.
+        // The previous code used `/checkout/v2/order/...` which is for Standard Checkout.
+        // Since the payment link was created using `/paylinks/v1/pay`,
+        // we must use `/paylinks/v1/{merchantOrderId}/status?details=true`.
+        const url = `${apiBase}/paylinks/v1/${encodeURIComponent(merchantOrderId)}/status?details=true`;
         const res = await fetch(url, {
             method: 'GET',
             headers: {
@@ -294,16 +247,10 @@ class PaymentService {
         }
         return data;
     }
-
-    // Dispatch: if client_id/client_secret are present use the OAuth
-    // flow (matches how the payment link was generated). Otherwise
-    // fall back to the legacy PG v1 flow.
     async _callPhonePeStatus(merchantOrderId, supplierId) {
         const cfg = await this._resolvePhonePeConfig(supplierId);
-
         const hasOAuth = !!(cfg.clientId && cfg.clientSecret);
         const hasV1 = !!(cfg.merchantId && cfg.saltKey);
-
         if (!hasOAuth && !hasV1) {
             const dbgProvider = cfg.provider
                 ? {
@@ -332,20 +279,17 @@ class PaymentService {
             };
             throw err;
         }
-
         if (hasOAuth) {
             return await this._callPhonePeStatusV2(merchantOrderId, cfg);
         }
         return await this._callPhonePeStatusV1(merchantOrderId, cfg);
     }
-
     async _persistOrderUpdate(targetSupplierOrder, targetIdx, targetOrder) {
         const orders = targetSupplierOrder.orders || [];
         orders[targetIdx] = targetOrder;
         targetSupplierOrder.orders = orders;
         targetSupplierOrder.changed('orders', true);
         await targetSupplierOrder.save();
-
         const customerOrders = await CustomerOrder.findAll();
         for (const co of customerOrders) {
             const subs = co.subOrders || [];
@@ -369,13 +313,80 @@ class PaymentService {
             }
         }
     }
-
+    // Interpret PhonePe's response regardless of which dialect is returned.
+    // Some tenants return a flat { code, data }, others return the newer
+    // { orderId, state, paymentDetails[] } shape. Crucially, the top-level
+    // `state` on Standard Checkout v2 can LAG behind the actual transaction
+    // state — the `paymentDetails[]` array is often fresher. So we scan
+    // BOTH and treat the order as PAID if either place shows a completed
+    // transaction.
+    _interpretPhonePeResponse(data) {
+        const providerData = data?.data || data || {};
+        const topState = normalizeState(
+            providerData.state ||
+            providerData.status ||
+            providerData.orderStatus ||
+            data?.code
+        );
+        const rawDetails = Array.isArray(providerData.paymentDetails)
+            ? providerData.paymentDetails
+            : [];
+        const details = rawDetails.map(d => ({
+            ...d,
+            normalizedState: normalizeState(d.state || d.status),
+        }));
+        const completedDetail = details.find(d => isCompletedState(d.normalizedState));
+        const failedDetail = details.find(d => isFailedState(d.normalizedState));
+        const pendingDetail = details.find(
+            d => !isCompletedState(d.normalizedState) && !isFailedState(d.normalizedState)
+        );
+        const topIsPaid = isCompletedState(topState);
+        const topIsFailed = isFailedState(topState);
+        // Priority: any COMPLETED anywhere -> PAID.
+        // Otherwise: top-level FAILED, or ALL details FAILED and none pending -> FAILED.
+        // Otherwise: PENDING.
+        let status = 'PENDING';
+        let providerState = topState || 'PENDING';
+        if (topIsPaid || completedDetail) {
+            status = 'PAID';
+            if (completedDetail) providerState = completedDetail.normalizedState;
+        } else if (topIsFailed || (details.length > 0 && !pendingDetail && failedDetail)) {
+            status = 'FAILED';
+            if (failedDetail) providerState = failedDetail.normalizedState;
+        }
+        const usableDetail = completedDetail || failedDetail || pendingDetail || null;
+        const txnId =
+            (usableDetail && usableDetail.transactionId) ||
+            providerData.transactionId ||
+            providerData.merchantTransactionId ||
+            data?.transactionId ||
+            null;
+        const mode =
+            (usableDetail && usableDetail.paymentMode) ||
+            providerData.paymentInstrument?.type ||
+            providerData.paymentMode ||
+            null;
+        const amountRaw = (() => {
+            if (usableDetail && usableDetail.amount != null) return usableDetail.amount;
+            if (providerData.amount != null) return providerData.amount;
+            if (providerData.orderAmount != null) return providerData.orderAmount;
+            return null;
+        })();
+        return {
+            status,
+            providerState,
+            txnId,
+            mode,
+            amountPaise: amountRaw,
+            details,
+            rawData: data,
+        };
+    }
     async checkPaymentStatus(orderId) {
         const supplierOrders = await SupplierOrder.findAll();
         let targetSupplierOrder = null;
         let targetOrder = null;
         let targetIdx = -1;
-
         for (const so of supplierOrders) {
             const orders = so.orders || [];
             const idx = orders.findIndex(o => o.id === orderId);
@@ -386,84 +397,49 @@ class PaymentService {
                 break;
             }
         }
-
         if (!targetOrder) {
             const err = new Error('Order not found');
             err.status = 404;
             throw err;
         }
-
         const attempts = targetOrder.paymentAttempts || [];
+        // FIX: Explicitly look for `merchantOrderId` in paymentAttempts.
+        // The top-level `paymentMerchantOrderId` might be missing or incorrect,
+        // but the attempt log will have the exact ID used when creating the link.
+        const lastWithMerchantId = [...attempts].reverse().find(a => a && a.merchantOrderId);
         const lastWithRef = [...attempts].reverse().find(a => a && a.refId);
         const merchantOrderId =
             targetOrder.paymentMerchantOrderId ||
+            (lastWithMerchantId && lastWithMerchantId.merchantOrderId) ||
             (lastWithRef && lastWithRef.refId) ||
             null;
-
         if (!merchantOrderId) {
             const err = new Error('No PhonePe reference found for this order');
             err.status = 400;
             throw err;
         }
-
         const supplierId = targetSupplierOrder.userId || null;
         const data = await this._callPhonePeStatus(merchantOrderId, supplierId);
-
-        // Both v1 and v2 responses nest the useful fields under .data,
-        // but the shape differs slightly. Normalize.
-        const providerData = data?.data || data || {};
-        const rawState =
-            providerData.state ||
-            providerData.status ||
-            providerData.orderStatus ||
-            data?.code ||
-            '';
-        const providerState = String(rawState).toUpperCase();
-        const successCode = String(data?.code || '').toUpperCase();
-        const isPaid =
-            providerState === 'COMPLETED' ||
-            providerState === 'SUCCESS' ||
-            providerState === 'PAYMENT_SUCCESS' ||
-            successCode === 'PAYMENT_SUCCESS';
-        const isFailed =
-            providerState === 'FAILED' ||
-            providerState === 'PAYMENT_ERROR' ||
-            providerState === 'PAYMENT_DECLINED' ||
-            providerState === 'PAYMENT_CANCELLED' ||
-            successCode === 'PAYMENT_ERROR' ||
-            successCode === 'PAYMENT_DECLINED' ||
-            successCode === 'PAYMENT_CANCELLED';
-
+        const interpreted = this._interpretPhonePeResponse(data);
+        const {
+            status, providerState, txnId, mode, amountPaise, rawData,
+        } = interpreted;
         const nowTime = new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
         });
-        const amountRaw =
-            providerData.amount != null
-                ? providerData.amount
-                : (providerData.orderAmount != null ? providerData.orderAmount : null);
         const collectedAmount =
-            amountRaw != null
-                ? Number(amountRaw) / 100
+            amountPaise != null
+                ? Number(amountPaise) / 100
                 : targetOrder.total;
-
-        const txnId =
-            providerData.transactionId ||
-            providerData.merchantTransactionId ||
-            data?.transactionId ||
-            null;
-        const mode =
-            providerData.paymentInstrument?.type ||
-            providerData.paymentMode ||
-            null;
-
-        targetOrder.providerResponse = data;
-
-        if (isPaid) {
+        targetOrder.providerResponse = rawData;
+        if (status === 'PAID') {
+            // Even if PhonePe's top-level state is still PENDING, we
+            // trust the transaction detail — flip the order to Paid.
             if (targetOrder.paymentStatus !== 'Paid') {
                 targetOrder.paymentStatus = 'Paid';
                 targetOrder.amountCollected = collectedAmount;
-                targetOrder.paymentDetails = providerData;
+                targetOrder.paymentDetails = data?.data || data;
                 targetOrder.transactionId = txnId;
                 targetOrder.paymentMode = mode;
                 targetOrder.paymentAttempts = [
@@ -476,7 +452,7 @@ class PaymentService {
                         paymentMode: mode || 'N/A',
                         refId: txnId || merchantOrderId,
                         providerState,
-                        rawResponse: data,
+                        rawResponse: rawData,
                     },
                 ];
                 targetOrder.statusHistory = [
@@ -489,7 +465,7 @@ class PaymentService {
                     },
                 ];
             }
-        } else if (isFailed) {
+        } else if (status === 'FAILED') {
             if (targetOrder.paymentStatus !== 'Failed') {
                 targetOrder.paymentStatus = 'Failed';
                 targetOrder.paymentAttempts = [
@@ -502,7 +478,7 @@ class PaymentService {
                         paymentMode: mode || 'N/A',
                         refId: merchantOrderId,
                         providerState,
-                        rawResponse: data,
+                        rawResponse: rawData,
                     },
                 ];
                 targetOrder.statusHistory = [
@@ -516,11 +492,9 @@ class PaymentService {
                 ];
             }
         } else {
+            // Still PENDING — do not spam the attempt log with every poll.
             const alreadyLogged = attempts.some(
-                a =>
-                    a &&
-                    a.providerState === (providerState || 'PENDING') &&
-                    a.refId === merchantOrderId
+                a => a && a.status === 'PENDING' && a.refId === merchantOrderId
             );
             if (!alreadyLogged) {
                 targetOrder.paymentAttempts = [
@@ -533,18 +507,16 @@ class PaymentService {
                         paymentMode: mode || 'N/A',
                         refId: merchantOrderId,
                         providerState: providerState || 'PENDING',
-                        rawResponse: data,
+                        rawResponse: rawData,
                     },
                 ];
             }
         }
-
         await this._persistOrderUpdate(
             targetSupplierOrder,
             targetIdx,
             targetOrder
         );
-
         return {
             orderId: targetOrder.id,
             paymentStatus: targetOrder.paymentStatus,
@@ -553,10 +525,9 @@ class PaymentService {
             paymentMode: targetOrder.paymentMode || null,
             amountCollected: targetOrder.amountCollected || 0,
             paymentAttempts: targetOrder.paymentAttempts,
-            providerResponse: data,
+            providerResponse: rawData,
         };
     }
-
     async handlePhonepeWebhook(payload) {
         try {
             const responseString = payload.response;
@@ -595,6 +566,7 @@ class PaymentService {
                                 transactionId: transactionId,
                                 paymentMode: paymentMode,
                                 refId: data.orderId,
+                                merchantOrderId: merchantOrderId,
                             },
                         ];
                         order.statusHistory = [
@@ -618,6 +590,7 @@ class PaymentService {
                                 transactionId: transactionId || 'N/A',
                                 paymentMode: paymentMode || 'N/A',
                                 refId: data.orderId,
+                                merchantOrderId: merchantOrderId,
                             },
                         ];
                         order.statusHistory = [

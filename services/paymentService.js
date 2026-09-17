@@ -1,5 +1,5 @@
 'use strict';
-const { SupplierOrder } = require('../models');
+const { SupplierOrder, CustomerOrder } = require('../models');
 const { Op } = require('sequelize');
 class PaymentService {
     async handlePhonepeWebhook(payload) {
@@ -57,6 +57,26 @@ class PaymentService {
                     so.orders = orders;
                     so.changed('orders', true);
                     await so.save();
+                    // Sync to Customer Order
+                    const customerOrders = await CustomerOrder.findAll();
+                    for (const co of customerOrders) {
+                        let coSubOrders = co.subOrders || [];
+                        const coSubIdx = coSubOrders.findIndex(s => s.id === order.id);
+                        if (coSubIdx !== -1) {
+                            coSubOrders[coSubIdx] = {
+                                ...coSubOrders[coSubIdx],
+                                paymentStatus: order.paymentStatus,
+                                amountCollected: order.amountCollected,
+                                paymentDetails: order.paymentDetails,
+                                paymentAttempts: order.paymentAttempts,
+                                statusHistory: order.statusHistory
+                            };
+                            co.subOrders = coSubOrders;
+                            co.changed('subOrders', true);
+                            await co.save();
+                            break;
+                        }
+                    }
                     break; 
                 }
             }

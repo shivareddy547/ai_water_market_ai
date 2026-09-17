@@ -1,7 +1,26 @@
 'use strict';
-const { SupplierOrder, User, DeliveryTeam, Provider } = require('../models');
+const { SupplierOrder, User, DeliveryTeam, Provider, CustomerOrder } = require('../models');
 const { Op } = require('sequelize');
 const axios = require('axios');
+async function syncCustomerOrder(orderId, updates) {
+    try {
+        const customerOrders = await CustomerOrder.findAll();
+        for (const co of customerOrders) {
+            let subOrders = co.subOrders || [];
+            const subIdx = subOrders.findIndex(s => s.id === orderId);
+            if (subIdx !== -1) {
+                const oldSub = subOrders[subIdx];
+                subOrders[subIdx] = { ...oldSub, ...updates };
+                co.subOrders = subOrders;
+                co.changed('subOrders', true);
+                await co.save();
+                break;
+            }
+        }
+    } catch (err) {
+        console.error('Error syncing customer order:', err);
+    }
+}
 class DeliveryOrderService {
     async getAssignedOrders(userId) {
         try {
@@ -103,6 +122,7 @@ class DeliveryOrderService {
             supplierOrder.orders = orders;
             supplierOrder.changed('orders', true);
             await supplierOrder.save();
+            await syncCustomerOrder(order.id, { status: order.status, statusHistory: order.statusHistory });
             return order;
         } catch (error) {
             console.error('Error updating order status:', error);
@@ -140,7 +160,6 @@ class DeliveryOrderService {
             order.amountCollected = paymentStatus === 'Paid' ? amountCollected : 0;
             order.paymentProofImage = proofImage;
             order.paymentReason = reason;
-            // Add to payment attempts
             order.paymentAttempts = [...(order.paymentAttempts || []), {
                 status: paymentStatus,
                 amount: amountCollected,
@@ -160,6 +179,14 @@ class DeliveryOrderService {
             supplierOrder.orders = orders;
             supplierOrder.changed('orders', true);
             await supplierOrder.save();
+            await syncCustomerOrder(order.id, {
+                paymentStatus: order.paymentStatus,
+                amountCollected: order.amountCollected,
+                paymentProofImage: order.paymentProofImage,
+                paymentReason: order.paymentReason,
+                paymentAttempts: order.paymentAttempts,
+                statusHistory: order.statusHistory
+            });
             return order;
         } catch (error) {
             console.error('Error updating order payment:', error);
@@ -244,7 +271,6 @@ class DeliveryOrderService {
             const amountInPaise = Math.round(Number(order.total || 0) * 100);
             const merchantOrderId = `${order.id}-${Date.now()}`;
             const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-            // Format item details for the description
             const itemSummary = order.items.map(i => `${i.name} x${i.qty}`).join(', ');
             const description = `Order ${order.id}: ${itemSummary}`.substring(0, 255);
             const payRequestBody = {
@@ -306,6 +332,14 @@ class DeliveryOrderService {
             supplierOrder.orders = orders;
             supplierOrder.changed('orders', true);
             await supplierOrder.save();
+            await syncCustomerOrder(order.id, {
+                paymentLink: order.paymentLink,
+                paymentStatus: order.paymentStatus,
+                paymentRefId: order.paymentRefId,
+                paymentMerchantOrderId: order.paymentMerchantOrderId,
+                paymentAttempts: order.paymentAttempts,
+                statusHistory: order.statusHistory
+            });
             return paymentLink;
         } catch (error) {
             console.error('Error generating payment link:', error);
@@ -388,6 +422,13 @@ class DeliveryOrderService {
                 supplierOrder.orders = orders;
                 supplierOrder.changed('orders', true);
                 await supplierOrder.save();
+                await syncCustomerOrder(order.id, {
+                    paymentStatus: order.paymentStatus,
+                    amountCollected: order.amountCollected,
+                    paymentDetails: order.paymentDetails,
+                    paymentAttempts: order.paymentAttempts,
+                    statusHistory: order.statusHistory
+                });
                 return order;
             } else if (phonepeData.state === 'FAILED') {
                 order.paymentStatus = 'Failed';
@@ -404,6 +445,12 @@ class DeliveryOrderService {
                 supplierOrder.orders = orders;
                 supplierOrder.changed('orders', true);
                 await supplierOrder.save();
+                await syncCustomerOrder(order.id, {
+                    paymentStatus: order.paymentStatus,
+                    paymentDetails: order.paymentDetails,
+                    paymentAttempts: order.paymentAttempts,
+                    statusHistory: order.statusHistory
+                });
                 return order;
             } else {
                 return order;

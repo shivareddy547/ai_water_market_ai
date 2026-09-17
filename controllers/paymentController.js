@@ -11,5 +11,24 @@ class PaymentController {
             res.status(200).json({ success: true }); // Still return 200 to prevent retries
         }
     }
+
+    async checkPhonepeStatus(req, res, next) {
+        try {
+            const { orderId } = req.params;
+            const result = await paymentService.checkPaymentStatus(orderId);
+            res.json({
+                success: true,
+                data: result,
+                message:
+                    result.paymentStatus === 'Paid'
+                        ? 'Payment confirmed by PhonePe'
+                        : result.paymentStatus === 'Failed'
+                        ? 'Payment failed at PhonePe'
+                        : 'Payment still pending at PhonePe',
+            });
+        } catch (err) {
+            next(err);
+        }
+    }
 }
 module.exports = new PaymentController();

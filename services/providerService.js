@@ -264,5 +264,79 @@ class ProviderService {
             throw err;
         }
     }
+    async getActiveSmtpProvider(user = null) {
+        try {
+            const where = {
+                providerType: 'smtp',
+                isEnabled: true
+            };
+            if (user && user.role && user.role !== 'admin') {
+                where[Op.or] = [
+                    { userId: user.id },
+                    { targetType: 'role', targetRole: user.role },
+                    { targetType: 'role', targetRole: 'admin' }
+                ];
+            } else {
+                where[Op.or] = [
+                    { targetType: 'role', targetRole: 'admin' },
+                    ...(user ? [{ userId: user.id }] : [])
+                ];
+            }
+            const provider = await Provider.findOne({
+                where,
+                order: [['created_at', 'DESC']]
+            });
+            return provider;
+        } catch (error) {
+            console.error('Error fetching active SMTP provider:', error);
+            const err = new Error('Failed to fetch active SMTP provider');
+            err.status = 500;
+            throw err;
+        }
+    }
+    async getActiveSmsProvider(user = null) {
+        try {
+            const where = {
+                providerType: 'sms',
+                isEnabled: true
+            };
+            if (user && user.role && user.role !== 'admin') {
+                where[Op.or] = [
+                    { userId: user.id },
+                    { targetType: 'role', targetRole: user.role },
+                    { targetType: 'role', targetRole: 'admin' }
+                ];
+            } else {
+                where[Op.or] = [
+                    { targetType: 'role', targetRole: 'admin' },
+                    ...(user ? [{ userId: user.id }] : [])
+                ];
+            }
+            const provider = await Provider.findOne({
+                where,
+                order: [['created_at', 'DESC']]
+            });
+            return provider;
+        } catch (error) {
+            console.error('Error fetching active SMS provider:', error);
+            const err = new Error('Failed to fetch active SMS provider');
+            err.status = 500;
+            throw err;
+        }
+    }
+    async getActiveSetupProviders(user = null) {
+        try {
+            const [smtp, sms] = await Promise.all([
+                this.getActiveSmtpProvider(user),
+                this.getActiveSmsProvider(user)
+            ]);
+            return { smtp, sms };
+        } catch (error) {
+            console.error('Error fetching active setup providers:', error);
+            const err = new Error('Failed to fetch active setup providers');
+            err.status = 500;
+            throw err;
+        }
+    }
 }
 module.exports = new ProviderService();

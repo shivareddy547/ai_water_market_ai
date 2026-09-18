@@ -84,5 +84,41 @@ class ProviderController {
             next(error);
         }
     }
+    async getActiveSmtp(req, res, next) {
+        try {
+            const provider = await providerService.getActiveSmtpProvider(req.user);
+            res.status(200).json({
+                success: true,
+                data: provider,
+                message: 'Active SMTP provider fetched successfully'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+    async getActiveSms(req, res, next) {
+        try {
+            const provider = await providerService.getActiveSmsProvider(req.user);
+            res.status(200).json({
+                success: true,
+                data: provider,
+                message: 'Active SMS provider fetched successfully'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+    async getActiveSetupProviders(req, res, next) {
+        try {
+            const result = await providerService.getActiveSetupProviders(req.user);
+            res.status(200).json({
+                success: true,
+                data: result,
+                message: 'Active setup providers fetched successfully'
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 module.exports = new ProviderController();

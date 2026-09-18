@@ -1,0 +1,10 @@
+'use strict';
+const express = require('express');
+const router = express.Router();
+const ctrl = require('../controllers/adminCommissionController');
+const authMiddleware = require('../middleware/authMiddleware');
+router.get('/all-dues', authMiddleware, ctrl.getAllDues);
+router.get('/my-dues', authMiddleware, ctrl.getMyDues);
+router.post('/create', authMiddleware, ctrl.createLink);
+router.get('/verify/:merchantOrderId', authMiddleware, ctrl.verifyPayment);
+module.exports = router;

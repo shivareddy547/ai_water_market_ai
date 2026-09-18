@@ -108,6 +108,91 @@ class AdminCommissionService {
             return { amount: td, orderCount: unpaidOrders.length, paymentLink: owl?.commissionPaymentLink || null, merchantOrderId: owl?.commissionMerchantOrderId || null };
         } catch (error) { if (error.status) throw error; console.error('[AdminCommission] getSupplierDues:', error); const err = new Error(error.message || 'Failed'); err.status = 500; throw err; }
     }
+    /* NEW: Get full payment history for a supplier — all batches (paid + pending) + unbilled orders */
+    async getSupplierPaymentHistory(supplierId) {
+        try {
+            const supplier = await User.findByPk(supplierId);
+            if (!supplier) { const e = new Error('Supplier not found'); e.status = 404; throw e; }
+            const supplierStoreName = (supplier.storeName || `${supplier.firstName} ${supplier.lastName}`).toLowerCase();
+            const cr = supplier.commission || 10;
+            const supplierOrderRecord = await SupplierOrder.findOne({ where: { userId: supplierId } });
+            const allCustomerOrders = await CustomerOrder.findAll();
+            let allOrders = [];
+            /* From supplier_orders — ALL orders (paid + unpaid) */
+            if (supplierOrderRecord && Array.isArray(supplierOrderRecord.orders)) {
+                allOrders = supplierOrderRecord.orders.map(o => ({
+                    id: o.id, customer: o.customer || '', total: o.total || 0, items: o.items || [],
+                    platformFee: Number(o.platformFee) || 0, commissionPaid: o.commissionPaid,
+                    commissionMerchantOrderId: o.commissionMerchantOrderId, commissionBatchId: o.commissionBatchId,
+                    commissionPaymentLink: o.commissionPaymentLink, commissionPaymentState: o.commissionPaymentState,
+                    commissionPaymentAmount: o.commissionPaymentAmount, commissionPaymentCreatedAt: o.commissionPaymentCreatedAt,
+                    commissionPaymentFailureReason: o.commissionPaymentFailureReason,
+                }));
+            }
+            /* From customer_orders — match by store name or supplierId */
+            const seenIds = new Set(allOrders.map(o => o.id));
+            for (const co of allCustomerOrders) {
+                const sk = Array.isArray(co.subOrders) ? 'subOrders' : (Array.isArray(co.sub_orders) ? 'sub_orders' : null);
+                if (!sk) continue;
+                for (const sub of co[sk]) {
+                    if (!sub || seenIds.has(sub.id)) continue;
+                    const sn = String(sub.supplier || '').toLowerCase();
+                    const si = sub.supplierId || sub.supplier_id;
+                    if (si === supplierId || sn === supplierStoreName) {
+                        const l = sub.lines || [];
+                        const it = l.reduce((n, x) => n + (Number(x.price) || 0) * (Number(x.qty) || 0), 0);
+                        const gt = Number(sub.grandTotal) || (it + Number(sub.shipping || 0) + Number(sub.depositTotal || 0) + Number(sub.platformFee || 0));
+                        allOrders.push({
+                            id: sub.id, customer: co.orderNumber || co.order_number || 'Customer', total: gt, items: l,
+                            platformFee: Number(sub.platformFee) || 0, commissionPaid: sub.commissionPaid,
+                            commissionMerchantOrderId: sub.commissionMerchantOrderId, commissionBatchId: sub.commissionBatchId,
+                            commissionPaymentLink: sub.commissionPaymentLink, commissionPaymentState: sub.commissionPaymentState,
+                            commissionPaymentAmount: sub.commissionPaymentAmount, commissionPaymentCreatedAt: sub.commissionPaymentCreatedAt,
+                            commissionPaymentFailureReason: sub.commissionPaymentFailureReason,
+                        });
+                        seenIds.add(sub.id);
+                    }
+                }
+            }
+            /* Group orders by commissionMerchantOrderId into payment batches */
+            const batches = {};
+            const unbilledOrders = [];
+            for (const order of allOrders) {
+                const moid = order.commissionMerchantOrderId || order.commissionBatchId;
+                const dues = this._adminDuesFor(order, cr);
+                if (moid) {
+                    if (!batches[moid]) {
+                        batches[moid] = {
+                            merchantOrderId: moid, orders: [], totalAmount: 0,
+                            state: order.commissionPaymentState || 'UNKNOWN',
+                            commissionPaid: order.commissionPaid === true,
+                            paymentLink: order.commissionPaymentLink || null,
+                            createdAt: order.commissionPaymentCreatedAt || null,
+                            failureReason: order.commissionPaymentFailureReason || null,
+                        };
+                    }
+                    batches[moid].orders.push({ orderId: order.id, customer: order.customer || '', total: order.total || 0, commissionAmount: dues, commissionPaid: order.commissionPaid === true });
+                    batches[moid].totalAmount += dues;
+                    if (order.commissionPaymentState) batches[moid].state = order.commissionPaymentState;
+                } else {
+                    if (dues > 0 && order.commissionPaid !== true) {
+                        unbilledOrders.push({ orderId: order.id, customer: order.customer || '', total: order.total || 0, commissionAmount: dues });
+                    }
+                }
+            }
+            const batchList = Object.values(batches).map(b => ({ ...b, totalAmount: Math.round(b.totalAmount * 100) / 100 }))
+                .sort((a, b) => { const at = a.createdAt ? new Date(a.createdAt).getTime() : 0; const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0; return bt - at; });
+            const totalPaid = batchList.filter(b => b.commissionPaid).reduce((s, b) => s + b.totalAmount, 0);
+            const totalPendingUnbilled = unbilledOrders.reduce((s, o) => s + o.commissionAmount, 0);
+            const totalPendingBilled = batchList.filter(b => !b.commissionPaid && b.state !== 'FAILED').reduce((s, b) => s + b.totalAmount, 0);
+            return {
+                supplierId, supplierName: supplier.storeName || `${supplier.firstName} ${supplier.lastName}`, commissionRate: cr,
+                totalPaid: Math.round(totalPaid * 100) / 100,
+                totalPending: Math.round((totalPendingUnbilled + totalPendingBilled) * 100) / 100,
+                totalOrders: allOrders.length, paymentBatches: batchList, unbilledOrders,
+            };
+        } catch (error) { if (error.status) throw error; console.error('[AdminCommission] getSupplierPaymentHistory:', error); const err = new Error(error.message || 'Failed'); err.status = 500; throw err; }
+    }
     async createCommissionPaymentLink(adminUser, supplierId) {
         try {
             const cfg = await this._resolveAdminPhonePeConfig();

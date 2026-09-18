@@ -5,6 +5,7 @@ const ctrl = require('../controllers/adminCommissionController');
 const authMiddleware = require('../middleware/authMiddleware');
 router.get('/all-dues', authMiddleware, ctrl.getAllDues);
 router.get('/my-dues', authMiddleware, ctrl.getMyDues);
+router.get('/history/:supplierId', authMiddleware, ctrl.getHistory);
 router.post('/create', authMiddleware, ctrl.createLink);
 router.get('/verify/:merchantOrderId', authMiddleware, ctrl.verifyPayment);
 module.exports = router;

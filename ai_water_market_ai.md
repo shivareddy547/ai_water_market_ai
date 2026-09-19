@@ -12,6 +12,6 @@
 - Usage Patterns Detected:
   - native fetch
 - Sample File Containing API Calls:
-  - src/pages/supplier/SupplierAddProduct.tsx
+  - src/pages/customer/CustomerProducts.tsx
 
 ## Other Libraries

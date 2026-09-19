@@ -10,7 +10,7 @@ module.exports = {
       },
       user_id: {
         type: Sequelize.UUID,
-        allowNull: false,
+        allowNull: true, // This is changed to true in a later migration
         references: {
           model: 'users',
           key: 'id'

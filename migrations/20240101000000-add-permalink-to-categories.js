@@ -1,30 +1,20 @@
 'use strict';
+
+/*
+ * FIX: This migration previously tried to ALTER TABLE "categories" ADD COLUMN "permalink"
+ * but ran BEFORE the `categories` table was created (by 20250115120004-create-categories.js),
+ * causing: ERROR: relation "public.categories" does not exist
+ *
+ * The `permalink` column is now created directly inside the `create-categories` migration
+ * (matching the schema dump where `permalink VARCHAR(255) NOT NULL UNIQUE` is part of the table).
+ * This migration is intentionally left as a no-op to preserve migration history ordering.
+ */
 module.exports = {
   up: async (queryInterface, Sequelize) => {
-    await queryInterface.addColumn('categories', 'permalink', {
-      type: Sequelize.STRING,
-      allowNull: true
-    });
-    const [categories] = await queryInterface.sequelize.query("SELECT id, name FROM categories");
-    for (const cat of categories) {
-      let slug = cat.name.toLowerCase().trim()
-        .replace(/\s+/g, '-')
-        .replace(/[^\w\-]+/g, '')
-        .replace(/\-\-+/g, '-')
-        .replace(/^-+/, '')
-        .replace(/-+$/, '');
-      if (!slug) slug = `category-${cat.id.substring(0, 8)}`;
-      await queryInterface.sequelize.query(`UPDATE categories SET permalink = :slug WHERE id = :id`, {
-        replacements: { slug, id: cat.id }
-      });
-    }
-    await queryInterface.changeColumn('categories', 'permalink', {
-      type: Sequelize.STRING,
-      allowNull: false,
-      unique: true
-    });
+    // No-op: permalink column is now created with the categories table itself.
   },
+
   down: async (queryInterface, Sequelize) => {
-    await queryInterface.removeColumn('categories', 'permalink');
+    // No-op: nothing to reverse.
   }
 };

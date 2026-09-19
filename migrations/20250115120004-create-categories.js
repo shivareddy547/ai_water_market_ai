@@ -1,4 +1,5 @@
 'use strict';
+
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     await queryInterface.createTable('categories', {
@@ -42,6 +43,13 @@ module.exports = {
         type: Sequelize.DATE,
         allowNull: false,
         defaultValue: Sequelize.NOW
+      },
+      // permalink moved here from 20240101000000-add-permalink-to-categories.js
+      // Matches schema: VARCHAR(255) NOT NULL UNIQUE
+      permalink: {
+        type: Sequelize.STRING,
+        allowNull: false,
+        unique: true
       }
     });
   },
